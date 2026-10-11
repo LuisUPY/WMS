@@ -8,7 +8,23 @@ service cloud.firestore {
         && request.auth.token.firebase.sign_in_provider == 'google.com';
     }
     function approved() {
-      return get(/databases/$(database)/documents/settings/inventory).data.status == 'active';
+      let s = get(/databases/$(database)/documents/settings/inventory).data;
+      let a = s.approval;
+      return s.status == 'active' && s.approvalStatus == 'approved' && s.stockScope == 'all-usable'
+        && s.approvalId is string && s.approvalId.matches('^[a-f0-9]{64}$')
+        && a.schemaVersion == 1 && a.stockScope == s.stockScope
+        && a.sourceSha256 is string && a.sourceSha256.matches('^[a-f0-9]{64}$')
+        && a.sourceSha256 == s.sourceSha256
+        && a.inventorySha256 is string && a.inventorySha256.matches('^[a-f0-9]{64}$')
+        && a.recordCount is int && a.recordCount > 0 && a.recordCount <= 400 && a.recordCount == s.recordCount
+        && a.sourceAsOf is timestamp && a.sourceAsOf == s.sourceAsOf
+        && a.approvedAt is timestamp && a.sourceAsOf <= a.approvedAt && a.approvedAt <= request.time
+        && a.approvedBy is string && a.approvedBy.size() <= 120 && a.approvedBy.matches('[\\s\\S]*[^\\s][\\s\\S]*')
+        && a.approvedByUid is string && a.approvedByUid.size() <= 128 && a.approvedByUid.matches('[\\s\\S]*[^\\s][\\s\\S]*')
+        && a.evidence is string && a.evidence.size() <= 1000 && a.evidence.matches('[\\s\\S]*[^\\s][\\s\\S]*')
+        && a.quantitiesAndUnitsConfirmed == true && a.numericNormalizationsReviewed == true
+        && a.noUnrecordedMovementsConfirmed == true
+        && get(/databases/$(database)/documents/inventoryApprovals/$(s.approvalId)).data.approval == a;
     }
     function validMovement(m) {
       return m.keys().hasOnly(['itemId', 'type', 'quantity', 'reference', 'unit', 'sku', 'warehouse',
@@ -30,6 +46,54 @@ service cloud.firestore {
       allow read: if administrator();
       // Import and opening approval are restricted to the trusted Admin SDK.
       allow write: if false;
+    }
+    match /inventoryApprovals/{approvalId} {
+      allow read: if administrator();
+      allow write: if false;
+    }
+    function validDetailChange(c) {
+      return c.keys().hasOnly(['itemId', 'field', 'valueBefore', 'valueAfter', 'revisionBefore', 'revisionAfter', 'actorUid', 'createdAt'])
+        && c.keys().hasAll(['itemId', 'field', 'valueBefore', 'valueAfter', 'revisionBefore', 'revisionAfter', 'actorUid', 'createdAt'])
+        && c.itemId is string && c.itemId.matches('^[A-Z0-9]+__[0-9]{1,20}$')
+        && c.field in ['umr', 'location'] && c.valueBefore is string && c.valueAfter is string
+        && c.valueAfter.size() > 0 && c.valueAfter.size() <= (c.field == 'umr' ? 20 : 80)
+        && c.valueAfter.matches('.*[^\\s].*')
+        && c.revisionBefore is int && c.revisionBefore >= 0 && c.revisionBefore < 9007199254740991
+        && c.revisionAfter is int && c.revisionAfter == c.revisionBefore + 1
+        && c.actorUid == request.auth.uid && c.createdAt == request.time;
+    }
+    function pairedDetail(itemId, next, c, changeId) {
+      let path = /databases/$(database)/documents/inventoryDetails/$(itemId);
+      let item = get(/databases/$(database)/documents/inventory/$(itemId)).data;
+      let before = exists(path) ? get(path).data : {'umr': item.unit, 'location': item.warehouse, 'revision': 0};
+      return next.keys().hasOnly(['itemId', 'umr', 'location', 'revision', 'lastChangeId', 'updatedAt'])
+        && next.keys().hasAll(['itemId', 'umr', 'location', 'revision', 'lastChangeId', 'updatedAt'])
+        && next.itemId == itemId && c.itemId == itemId
+        && c.valueBefore == before[c.field] && c.revisionBefore == before.revision
+        && next.umr == (c.field == 'umr' ? c.valueAfter : before.umr)
+        && next.location == (c.field == 'location' ? c.valueAfter : before.location)
+        && next.revision == c.revisionAfter && next.lastChangeId == changeId && next.updatedAt == request.time;
+    }
+    match /inventoryDetails/{itemId} {
+      allow read: if administrator();
+      allow delete: if false;
+      allow create, update: if administrator() && approved() && validDetailWrite(itemId);
+      function validDetailWrite(itemId) {
+        let next = request.resource.data;
+        let path = /databases/$(database)/documents/inventoryDetailChanges/$(next.lastChangeId);
+        let change = getAfter(path).data;
+        return next.lastChangeId is string && next.lastChangeId.matches('^[a-zA-Z0-9-]{20,80}$')
+          && !exists(path) && validDetailChange(change) && pairedDetail(itemId, next, change, next.lastChangeId);
+      }
+    }
+    match /inventoryDetailChanges/{changeId} {
+      allow read: if administrator();
+      allow update, delete: if false;
+      allow create: if administrator() && approved() && changeId.matches('^[a-zA-Z0-9-]{20,80}$')
+        && validDetailChange(request.resource.data)
+        && pairedDetail(request.resource.data.itemId,
+          getAfter(/databases/$(database)/documents/inventoryDetails/$(request.resource.data.itemId)).data,
+          request.resource.data, changeId);
     }
     match /inventory/{itemId} {
       allow read: if administrator();

@@ -1,5 +1,24 @@
 # Historial de versiones
 
+## 0.5 — 2026-10-11
+
+- Tabla ordenada alfabéticamente por descripción, con desempate por SKU.
+- Columnas CS CARTONES, CAR PAQUETES y CXT con el desglose histórico de apertura identificado como tal.
+- UMR y S. Loc. Ubicación editables mediante diálogos de texto. Son referencias visibles: no convierten cantidades ni reasignan el saldo a otro almacén.
+- Cambios de referencias compartidos en tiempo real, con auditoría inmutable, transacciones e identificador de reintento. La unidad y el almacén del inventario original se conservan.
+- Tabla ampliada e impresión horizontal; saldo mostrado junto a su unidad de control.
+- Archivos web identificados por versión para evitar mezclas con recursos anteriores en caché.
+- Incluye el proceso de aprobación 0.4 para activar el saldo validado con trazabilidad.
+
+## 0.4 — 2026-10-11
+
+- Revisión y aprobación administrativa del saldo inicial, con corte real, responsable, cuenta administrativa, evidencia y confirmación de mercancía utilizable.
+- Vista previa de solo lectura; comprobación de todos los saldos contra la fuente y huella del inventario revisado. Rechazo de datos cambiados, movimientos previos o aperturas ya activas.
+- Aprobación y auditoría atómicas sin reescribir cantidades ni historial. Copia del marcador anterior y materiales revisados, inmutable desde clientes.
+- Interfaz, transacciones y reglas exigen una aprobación completa; cambiar únicamente `status` a `active` no habilita movimientos.
+- Fecha de corte en hora de Mérida y alcance utilizable visibles después de aprobar. Unidades independientes y sesión/caché en memoria conservadas.
+- Pruebas de aprobación incompleta, cambios durante revisión, evidencia de auditoría y movimientos posteriores en emulador. Preparación local; publicación y activación de producción pendientes de autorización.
+
 ## 0.3 — 2026-10-11
 
 - Integración preparada de la fuente local `DB/DataBase.xlsx` con Cloud Firestore; archivo original conservado.
@@ -27,4 +46,4 @@
 - Simplificación del login: eliminación del icono de candado, la etiqueta «Administrador» y los tres textos introductorios señalados.
 - Indicador «Versión 0.1» en el pie de página.
 
-Cada actualización posterior incrementará la versión en 0.1 y se registrará aquí. La siguiente versión será 0.4.
+Cada actualización posterior incrementará la versión en 0.1 y se registrará aquí. La siguiente versión será 0.6.

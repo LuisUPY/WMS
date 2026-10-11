@@ -31,6 +31,8 @@ test("search matches SKU, description and alternate code", () => {
   assert.deepEqual(filterInventory(items, "PRUEBA"), [item]);
   assert.equal(filterInventory(items, "70.10")[0].sku, "87654321");
   assert.equal(filterInventory(items, "no existe").length, 0);
+  const alphabetic = [{ ...item, sku: "1", description: "Zorro" }, { ...item, sku: "9", description: "Álamo" }];
+  assert.deepEqual(filterInventory(alphabetic).map(row => row.sku), ["9", "1"]);
 });
 
 test("opening import is idempotent and refuses replacement of an existing source", async () => {

@@ -1,15 +1,16 @@
 {
   "name": "wms-inventory",
-  "version": "0.3.0",
+  "version": "0.5.0",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "node scripts/dev-server.mjs",
-    "test": "node --test tests/auth.test.mjs tests/access-policy.test.mjs tests/inventory.test.mjs",
+    "test": "node --test tests/auth.test.mjs tests/access-policy.test.mjs tests/inventory.test.mjs tests/opening-approval.test.mjs",
     "test:browser": "node tests/login.browser.cjs && node tests/inventory.browser.cjs",
     "test:firestore": "firebase emulators:exec --only firestore --project demo-wms-inventory \"node --test tests/firestore.test.mjs\"",
     "inventory:check": "node scripts/inventory-import.mjs",
     "inventory:import": "node scripts/inventory-import.mjs --apply",
+    "inventory:approval": "node scripts/inventory-approve.mjs",
     "auth:status": "node scripts/auth-status.mjs",
     "admin:grant": "node scripts/admin-role.mjs grant",
     "admin:revoke": "node scripts/admin-role.mjs revoke"

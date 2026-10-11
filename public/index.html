@@ -8,8 +8,8 @@
   <meta name="referrer" content="strict-origin-when-cross-origin">
   <title>Acceso de administrador · WMS</title>
   <link rel="icon" href="./assets/wms-logo.png" type="image/png">
-  <link rel="stylesheet" href="./styles.css">
-  <script defer src="./bootstrap.js"></script>
+  <link rel="stylesheet" href="./styles.css?v=0.5">
+  <script defer src="./bootstrap.js?v=0.5"></script>
 </head>
 <body>
   <a class="skip-link" href="#main">Ir al contenido</a>
@@ -69,7 +69,8 @@
           <div class="inventory-panel">
             <div class="inventory-toolbar"><label>Buscar material<input id="inventory-search" type="search" placeholder="SKU, descripción o código" autocomplete="off"></label><button class="secondary-button" id="inventory-print" type="button" disabled>Imprimir</button></div>
             <p id="inventory-count" class="small-copy"></p>
-            <div class="table-scroll" tabindex="0" role="region" aria-label="Materiales del inventario"><table><caption class="sr-only">Existencias por material, en su unidad de control</caption><thead><tr><th scope="col">Material</th><th scope="col">Descripción</th><th scope="col">Saldo total</th><th scope="col">Unidad</th><th scope="col" class="actions-column">Detalle</th></tr></thead><tbody id="inventory-rows"></tbody></table></div>
+            <p class="small-copy" id="packages-note">CS CARTONES, CAR PAQUETES y CXT muestran el desglose de apertura; no se recalculan con entradas o salidas.</p>
+            <div class="table-scroll" tabindex="0" role="region" aria-label="Materiales del inventario"><table class="inventory-table"><caption class="sr-only">Existencias por material y desglose de apertura</caption><thead><tr><th scope="col">Material</th><th scope="col">Descripción</th><th scope="col">Saldo total</th><th scope="col">CS CARTONES</th><th scope="col">CAR PAQUETES</th><th scope="col">CXT</th><th scope="col">UMR</th><th scope="col">S. Loc. Ubicación</th><th scope="col" class="actions-column">Detalle</th></tr></thead><tbody id="inventory-rows"></tbody></table></div>
             <p id="inventory-empty" class="small-copy">No hay materiales confirmados por el servidor.</p>
           </div>
           <aside class="inventory-panel movement-panel">
@@ -89,11 +90,21 @@
         </div>
         <section class="inventory-panel history-panel" aria-label="Historial de movimientos"><h2>Últimos 30 movimientos</h2><div class="table-scroll" tabindex="0" role="region" aria-label="Movimientos confirmados"><table><thead><tr><th scope="col">Fecha · Mérida</th><th scope="col">Material</th><th scope="col">Tipo</th><th scope="col">Cantidad</th><th scope="col">Referencia</th><th scope="col">Folio</th><th scope="col">Responsable (UID)</th></tr></thead><tbody id="movement-rows"></tbody></table></div><p id="movements-empty" class="small-copy">Aún no hay movimientos confirmados.</p></section>
         <p class="temporary-session">La sesión termina al recargar, cerrar esta pestaña o después de 30 minutos.</p>
+        <dialog id="detail-dialog" aria-labelledby="detail-title">
+          <form id="detail-form">
+            <h2 id="detail-title">Editar referencia</h2>
+            <p id="detail-material" class="small-copy"></p>
+            <label><span id="detail-label">Valor</span><input id="detail-value" type="text" required maxlength="80" autocomplete="off"></label>
+            <p id="detail-help" class="small-copy"></p>
+            <p id="detail-notice" class="small-copy" role="status"></p>
+            <div class="dialog-actions"><button class="secondary-button" id="detail-cancel" type="button">Cancelar</button><button class="primary-button" id="detail-submit" type="submit">Guardar cambio</button></div>
+          </form>
+        </dialog>
       </section>
       <noscript><p class="noscript-message">Activa JavaScript en tu navegador para iniciar sesión con Google.</p></noscript>
     </main>
 
-    <footer class="site-footer"><span>WMS <span class="footer-slash">/</span> Warehouse Management System</span><span id="system-version">Versión 0.3</span></footer>
+    <footer class="site-footer"><span>WMS <span class="footer-slash">/</span> Warehouse Management System</span><span id="system-version">Versión 0.5</span></footer>
   </div>
 </body>
 </html>

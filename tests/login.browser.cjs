@@ -30,7 +30,8 @@ const gatewayStub = `
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
 
-    // First exercise the shipped unconfigured page; it must never simulate success.
+    // Isolate the missing-config case even when this checkout has a real project.
+    await page.route('**/config.js*', route => route.fulfill({ contentType: 'text/javascript', body: 'export const firebaseConfig = null;' }));
     await page.goto(base);
     await page.getByRole('button', { name: 'Continuar con Google' }).click();
     await page.getByRole('alert').filter({ hasText: 'pendiente de activación' }).waitFor();
@@ -40,8 +41,8 @@ const gatewayStub = `
     assert.equal(await page.locator('.brand img').evaluate(img => img.complete && img.naturalWidth > 0), true);
 
     // These are mocked UI integration tests, never represented as live Google authentication.
-    await page.route('**/firebase-client.js', route => route.fulfill({ contentType: 'text/javascript', body: gatewayStub }));
-    await page.route('**/firestore-inventory.js', route => route.fulfill({ contentType: 'text/javascript', body: `export async function prepareInventory() { throw { code: 'failed-precondition' }; }` }));
+    await page.route('**/firebase-client.js*', route => route.fulfill({ contentType: 'text/javascript', body: gatewayStub }));
+    await page.route('**/firestore-inventory.js*', route => route.fulfill({ contentType: 'text/javascript', body: `export async function prepareInventory() { throw { code: 'failed-precondition' }; }` }));
     await page.reload();
     await page.getByRole('button', { name: 'Continuar con Google' }).click();
     await page.getByRole('heading', { name: 'Inventario.' }).waitFor();
@@ -83,21 +84,22 @@ const gatewayStub = `
 
     // Exercise the actual Firebase SDK loader with an isolated, non-production config.
     // This checks SDK initialization without a real sign-in or Google account.
-    await page.unroute('**/firebase-client.js');
-    await page.route('**/config.js', route => route.fulfill({ contentType: 'text/javascript', body: `export const firebaseConfig = { apiKey: 'AIzaSyTEST_CONFIG_NOT_A_REAL_API_KEY', authDomain: 'wms-login-test.firebaseapp.com', projectId: 'wms-login-test', appId: '1:123456789:web:localtest' };` }));
+    await page.unroute('**/firebase-client.js*');
+    await page.unroute('**/config.js*');
+    await page.route('**/config.js*', route => route.fulfill({ contentType: 'text/javascript', body: `export const firebaseConfig = { apiKey: 'AIzaSyTEST_CONFIG_NOT_A_REAL_API_KEY', authDomain: 'wms-login-test.firebaseapp.com', projectId: 'wms-login-test', appId: '1:123456789:web:localtest' };` }));
     await page.reload();
     const actualSDK = await page.evaluate(async () => {
-      const module = await import('./firebase-client.js');
+      const module = await import('./firebase-client.js?v=0.5');
       const service = await module.prepareGoogleAccess();
       const { app } = await module.prepareFirebaseSession();
       const sdk = await import('https://www.gstatic.com/firebasejs/13.0.0/firebase-firestore.js');
       const database = sdk.initializeFirestore(app, { localCache: sdk.memoryLocalCache() });
-      const { createInventoryStore } = await import('./inventory-store.js');
+      const { createInventoryStore } = await import('./inventory-store.js?v=0.5');
       const store = createInventoryStore(database, sdk);
       return { signIn: typeof service.signIn, signOut: typeof service.signOut, record: typeof store.record };
     });
     assert.deepEqual(actualSDK, { signIn: 'function', signOut: 'function', record: 'function' });
     assert.deepEqual(errors, []);
-    console.log('Browser checks passed: missing config, administrator, denial, cancellation, sign-out, reload, disabled storage, mobile layout, private file isolation and actual Firebase SDK initialization. Live OAuth remains pending project setup.');
+    console.log('Browser checks passed: missing config, administrator, denial, cancellation, sign-out, reload, disabled storage, mobile layout, private file isolation and actual Firebase SDK initialization. This test does not exercise live OAuth.');
   } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

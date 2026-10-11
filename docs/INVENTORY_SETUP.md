@@ -28,7 +28,7 @@ Iniciar sesión con la cuenta autorizada. Después de importar el inventario, el
 - La fecha de `I1` usa `TODAY()` y no acredita el corte. `sourceAsOf` se conserva como `null` hasta validación.
 - Se guarda la huella SHA-256 del archivo y la fila de origen. No se importan macros, enlaces externos ni fórmulas como instrucciones ejecutables.
 
-El libro no incluye factores de conversión independientes ni separa stock libre, calidad y bloqueado. La aplicación muestra **stock total sin clasificación**, con sumas separadas por unidad. No ofrece salidas en otras presentaciones ni recalcula CS/CAR/CXT a partir del saldo vigente. No representa disponibilidad libre para surtido.
+El libro no incluye factores de conversión independientes ni separa stock libre, calidad y bloqueado. En borrador se muestra **stock total sin clasificación aprobada**, con sumas separadas por unidad. Si el responsable confirma que todo el saldo es utilizable, la apertura 0.4 registra ese alcance y la pantalla lo muestra después de aprobar. No ofrece salidas en otras presentaciones ni recalcula CS/CAR/CXT a partir del saldo vigente.
 
 Firestore será la base central de trabajo. La importación del Excel es un arranque único: los cambios posteriores del archivo no actualizan la web y los movimientos web no reescriben el Excel. Tampoco hay conexión automática con SAP.
 
@@ -64,21 +64,24 @@ El importador usa `python3` por defecto. Se puede indicar el ejecutable con `WMS
 
 ## Saldo pendiente de validación
 
-La importación fija `settings/inventory.status = "draft"`, `approvalStatus = "pending"` y `sourceAsOf = null`. Se puede consultar e imprimir desde una cuenta autorizada, pero el cliente y las reglas impiden movimientos. No existe un botón de aprobación ni un atajo de activación en el sitio público.
+La importación fija `settings/inventory.status = "draft"`, `approvalStatus = "pending"` y `sourceAsOf = null`. Se puede consultar e imprimir desde una cuenta autorizada, pero el cliente y las reglas impiden movimientos. La aprobación se realiza exclusivamente con la herramienta administrativa 0.4, según [OPENING_APPROVAL.md](OPENING_APPROVAL.md).
 
-Para una etapa posterior, el responsable deberá validar fecha real, saldos, unidades, las normalizaciones registradas y el tratamiento de libre/calidad/bloqueado. La activación administrativa deberá registrar fecha, responsable y evidencia y cambiar el estado a `active` desde un entorno de confianza. Esa aprobación no se ha solicitado ni ejecutado en esta entrega. El sistema no debe activarse para surtido libre sin resolver la clasificación del stock.
+El responsable debe validar corte real, saldos, unidades, normalizaciones y que toda la apertura sea utilizable, además de conciliar cualquier movimiento posterior al corte. Cambiar solo `status` a `active` ya no basta: cliente y reglas exigen el contrato completo y las reglas comprueban la auditoría. La herramienta compara el inventario contra la fuente y contra la huella revisada antes de aprobar en una transacción.
 
 ## Estructura de Firestore
 
 - `settings/inventory`: archivo, hoja, huella, fecha de origen, estado, normalizaciones, número de materiales, sumas por unidad y fecha de importación. Escritura exclusiva del entorno administrativo.
 - `inventory/{almacén__SKU}`: identidad, unidad, saldo inicial, saldo actual, desglose de apertura, fila de origen, revisión, último movimiento y fecha de cambio.
 - `movements/{UUID}`: entrada/salida, material, unidad, cantidad, referencia, saldo antes/después, UID del responsable y fecha del servidor. Inmutable desde los clientes.
+- `inventoryApprovals/{huella}`: declaración de aprobación, marcador anterior y copia de los materiales revisados. Solo lectura desde clientes autorizados; creación exclusiva del entorno administrativo.
+- `inventoryDetails/{materialId}`: UMR y ubicación visibles, revisión, último cambio y fecha de servidor. Referencias independientes de la unidad y el almacén que controlan el saldo.
+- `inventoryDetailChanges/{UUID}`: referencia cambiada, valor anterior/posterior, revisiones, responsable y fecha de servidor. Inmutable desde clientes; su creación exige guardar el cambio de referencia en la misma transacción.
 
 El permiso vigente es únicamente administrador. No se han habilitado roles de encargado o consulta. Se rechazan todos los recursos fuera de las rutas definidas.
 
 ## Cambios compartidos y conexión
 
-El cliente usa [suscripciones `onSnapshot`](https://firebase.google.com/docs/firestore/query-data/listen) para inventario, origen e historial. La misma base entrega los cambios confirmados a las sesiones autorizadas. La pantalla solo marca conexión confirmada cuando las tres consultas proceden del servidor y no tienen escrituras pendientes.
+El cliente usa [suscripciones `onSnapshot`](https://firebase.google.com/docs/firestore/query-data/listen) para inventario, origen, referencias visibles e historial. La misma base entrega los cambios confirmados a las sesiones autorizadas. La pantalla solo marca conexión confirmada cuando todas las consultas proceden del servidor y no tienen escrituras pendientes.
 
 Authentication y la caché de Firestore usan memoria. No se almacenan saldos, sesiones ni formularios en LocalStorage, SessionStorage o IndexedDB. Se deshabilitan movimientos e impresión mientras no hay conexión confirmada; los datos ya mostrados pueden seguir visibles con su estado de conexión. [Metadatos de servidor y caché](https://firebase.google.com/docs/firestore/manage-data/enable-offline).
 

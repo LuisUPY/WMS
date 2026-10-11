@@ -728,7 +728,7 @@ h1 {
 .inventory-totals>div { border:1px solid var(--line); border-radius:10px; padding:18px 22px; background:white; }
 .inventory-totals span { display:block; font-size:12px; color:var(--muted); margin-bottom:9px; }
 .inventory-totals strong { font-size:25px; font-weight:500; font-variant-numeric:tabular-nums; }
-.inventory-workspace { display:grid; grid-template-columns:minmax(0,1fr) 300px; gap:22px; align-items:start; }
+.inventory-workspace { display:grid; grid-template-columns:minmax(0,1fr); gap:22px; align-items:start; }
 .inventory-panel { background:white; border:1px solid var(--line); border-radius:12px; padding:22px; min-width:0; }
 .inventory-toolbar { display:flex; gap:15px; align-items:end; }
 .inventory-toolbar label { flex:1; min-width:0; }
@@ -739,6 +739,15 @@ h1 {
 .inventory-layout h2 { font-size:17px; font-weight:500; margin:0 0 15px; }
 .inventory-layout fieldset { padding:0; margin:0; border:0; min-width:0; }
 .movement-panel label { margin-bottom:15px; }
+.movement-panel form fieldset { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:0 20px; }
+.movement-panel .primary-button { width:auto; }
+.inventory-table { min-width:1000px; }
+.inventory-table td:nth-child(2) { min-width:220px; }
+.cell-edit { display:block; padding:0; font-size:10px; margin-top:5px; }
+#detail-dialog { width:min(440px,calc(100% - 32px)); max-height:90vh; overflow:auto; padding:26px; color:var(--ink); border:1px solid var(--line); border-radius:12px; }
+#detail-dialog::backdrop { background:#193e5266; }
+.dialog-actions { display:flex; gap:12px; justify-content:flex-end; margin-top:20px; }
+.dialog-actions .primary-button { width:auto; }
 .small-copy { font-size:12px; line-height:1.75; color:var(--muted); overflow-wrap:anywhere; }
 .primary-button,.secondary-button { min-height:40px; padding:11px 16px; border-radius:6px; font-size:12px; }
 .primary-button { width:100%; background:var(--navy); color:white; border:1px solid var(--navy); }
@@ -777,6 +786,10 @@ h1 {
   .movement-panel .primary-button { width:100%; }
 }
 @media print {
+  @page { size:landscape; margin:12mm; }
+  #detail-dialog,.cell-edit { display:none!important; }
+  .inventory-table { min-width:0; font-size:10px; }
+  .inventory-table td:nth-child(2) { min-width:0; }
   .page-shell { max-width:none; padding:0; }
   .site-header { height:70px; }
   main { display:block; padding:20px 0; }

@@ -20,10 +20,19 @@ export function nextStock(item, input) {
   return stock;
 }
 
+export function detailInput(input) {
+  const value = typeof input.value === "string" ? input.value.trim() : "";
+  const maximum = input.field === "umr" ? 20 : 80;
+  if (!/^[A-Z0-9]+__[0-9]{1,20}$/.test(input.itemId || "") || !["umr", "location"].includes(input.field) ||
+      !value || value.length > maximum) throw new InventoryError("inventory/invalid-detail");
+  return { itemId: input.itemId, field: input.field, value };
+}
+
 export function filterInventory(items, search = "") {
   const term = search.trim().toLocaleLowerCase("es");
   return items.filter(item => `${item.sku} ${item.description} ${item.alternateCode || ""}`.toLocaleLowerCase("es").includes(term))
-    .sort((a, b) => a.sku.localeCompare(b.sku, "es", { numeric: true }));
+    .sort((a, b) => a.description.localeCompare(b.description, "es", { sensitivity: "base", numeric: true }) ||
+      a.sku.localeCompare(b.sku, "es", { numeric: true }));
 }
 
 export function inventoryMessage(error) {
@@ -35,6 +44,7 @@ export function inventoryMessage(error) {
     "inventory/insufficient-stock": "No hay saldo suficiente. Revisa la existencia actual.",
     "inventory/not-found": "El material ya no está disponible. Actualiza tu consulta.",
     "inventory/id-conflict": "Este identificador ya corresponde a otro movimiento. Revisa el historial.",
+    "inventory/invalid-detail": "Indica una UMR de hasta 20 caracteres o una ubicación de hasta 80 caracteres.",
     "permission-denied": "Tu cuenta no tiene permiso para consultar o modificar el inventario.",
     "unauthenticated": "La sesión terminó. Vuelve a iniciar sesión.",
     "unavailable": "No pudimos confirmar el movimiento. Conserva el formulario y vuelve a intentarlo con la misma referencia.",

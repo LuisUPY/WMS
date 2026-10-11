@@ -12,7 +12,7 @@
     button.disabled = false;
     return;
   }
-  import("./app.js").catch(function () {
+  import("./app.js?v=0.5").catch(function () {
     explain("No pudimos cargar el acceso. Revisa tu conexión y vuelve a abrir WMS.");
   });
 })();

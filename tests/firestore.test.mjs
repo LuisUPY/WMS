@@ -4,9 +4,12 @@ import { readFile } from "node:fs/promises";
 import { initializeTestEnvironment, assertFails, assertSucceeds } from "@firebase/rules-unit-testing";
 import * as sdk from "firebase/firestore";
 import { initializeApp, deleteApp } from "firebase-admin/app";
-import { getFirestore, FieldValue } from "firebase-admin/firestore";
+import { getFirestore, FieldValue, Timestamp } from "firebase-admin/firestore";
 import { createInventoryStore } from "../public/inventory-store.js";
 import { importOpening, readInventoryWorkbook } from "../scripts/inventory-import.mjs";
+import { inspectOpening, approveOpening } from "../scripts/opening-approval.mjs";
+import { isOpeningApproved } from "../public/opening-approval.js";
+import { approvedSource, workbookFixture, review, sourceHash } from "./opening-fixtures.mjs";
 
 const projectId = "demo-wms-inventory";
 const itemId = "A101__12345678";
@@ -18,7 +21,7 @@ let uid = 0;
 const subscriptions = [];
 const sample = { sku: "12345678", description: "Material de prueba", warehouse: "A101", unit: "PAC", stock: 10,
   openingStock: 10, openingPackages: { cs: 0, car: 1, cxt: 0 }, alternateCode: "", revision: 0,
-  lastMovementId: null, sourceSha256: "test-source", sourceRow: 3, updatedAt: new Date() };
+  lastMovementId: null, sourceSha256: sourceHash, sourceRow: 3, updatedAt: new Date() };
 
 before(async () => {
   if (!process.env.FIRESTORE_EMULATOR_HOST) throw new Error("These tests require the local Firestore emulator.");
@@ -30,7 +33,9 @@ before(async () => {
 beforeEach(async () => {
   subscriptions.splice(0).forEach(stop => stop());
   await env.clearFirestore();
-  await db.doc("settings/inventory").set({ status: "active", sourceAsOf: "2026-01-01", approvedBy: "Test", sourceSha256: "test-source" });
+  const source = approvedSource();
+  await db.doc("settings/inventory").set(source);
+  await db.doc(`inventoryApprovals/${source.approvalId}`).set({ approval: source.approval });
   await db.doc(`inventory/${itemId}`).set(sample);
 });
 after(async () => { subscriptions.splice(0).forEach(stop => stop()); await env?.cleanup(); if (adminApp) await deleteApp(adminApp); });
@@ -127,6 +132,7 @@ test("rules reject unpaired writes, forged quantity, identity, unit, negatives a
   await assertFails(forgedBatch(c, {}, { description: "Changed" }));
   await assertFails(forgedBatch(c, {}, { stock: -1 }));
   await assertFails(sdk.setDoc(sdk.doc(c.firestore, "settings", "inventory"), { status: "active" }));
+  await assertFails(sdk.setDoc(sdk.doc(c.firestore, "inventoryApprovals", "e".repeat(64)), { approval: { approvedBy: "forged" } }));
   await assertFails(sdk.setDoc(sdk.doc(c.firestore, "inventory", "A101__99999999"), sample));
 });
 
@@ -175,4 +181,120 @@ test("private workbook imports every material with saved stock and provenance", 
   assert.equal(c.current().source.status, "draft");
   assert.equal(c.current().items.length, 84);
   assert.equal(c.current().movements.length, 0);
+  c.stop();
+  const snapshot = await inspectOpening(db, data);
+  const approvedResult = await approveOpening(db, data, review, "test-approver", snapshot.inventorySha256,
+    { fromDate: date => Timestamp.fromDate(date), serverTimestamp: () => FieldValue.serverTimestamp() });
+  const audit = (await db.doc(`inventoryApprovals/${approvedResult.approvalId}`).get()).data();
+  assert.equal(audit.items.length, 84);
+  assert.equal(isOpeningApproved((await db.doc("settings/inventory").get()).data()), true);
+  assert.equal((await db.collection("movements").get()).size, 0);
+  const approved = await client();
+  assert.equal(approved.current().items.length, 84);
+  assert.equal(approved.current().source.stockScope, "all-usable");
+});
+
+test("incomplete approvals and missing audit cannot authorize a direct client batch", async () => {
+  const c = await client();
+  const good = approvedSource();
+  const invalid = [{ status: "active" }, { ...good, approvalStatus: "pending" },
+    { ...good, stockScope: "total-unclassified" }, { ...good, recordCount: 2 },
+    { ...good, approvalId: "d".repeat(64) }];
+  for (const key of Object.keys(good.approval)) {
+    const approval = { ...good.approval }; delete approval[key];
+    invalid.push({ ...good, approval });
+  }
+  for (const source of invalid) {
+    await db.doc("settings/inventory").set(source);
+    await assertFails(forgedBatch(c));
+  }
+  await db.doc("settings/inventory").set({ status: "active" });
+  const incomplete = await client();
+  await assert.rejects(() => incomplete.store.record(input(), operation(), incomplete.identity), { code: "inventory/not-approved" });
+  assert.equal((await db.collection("movements").get()).size, 0);
+});
+
+test("approval is atomic, auditable, preserves quantities and enables tested movements", async () => {
+  await env.clearFirestore();
+  const workbook = workbookFixture();
+  await importOpening(db, workbook, FieldValue.serverTimestamp());
+  const snapshot = await inspectOpening(db, workbook);
+  const timestamps = { fromDate: date => Timestamp.fromDate(date), serverTimestamp: () => FieldValue.serverTimestamp() };
+  await assert.rejects(() => approveOpening(db, workbook, { ...review, evidence: "" }, "approver", snapshot.inventorySha256, timestamps));
+  await assert.rejects(() => approveOpening(db, workbook, review, "approver", "0".repeat(64), timestamps), /cambió/);
+  assert.equal((await db.doc("settings/inventory").get()).data().status, "draft");
+  assert.equal((await db.collection("inventoryApprovals").get()).size, 0);
+  const declaration = { ...review, evidence: `${review.evidence}\nRevisión técnica de prueba` };
+  const result = await approveOpening(db, workbook, declaration, "approver", snapshot.inventorySha256, timestamps);
+  const source = (await db.doc("settings/inventory").get()).data();
+  assert.equal(isOpeningApproved(source), true);
+  assert.equal(source.approval.approvedBy, review.approvedBy);
+  const audit = (await db.doc(`inventoryApprovals/${result.approvalId}`).get()).data();
+  assert.deepEqual(audit.approval, source.approval);
+  assert.equal(audit.sourceBefore.status, "draft");
+  assert.equal(audit.items[0].stock, 10);
+  assert.equal((await db.doc(`inventory/${itemId}`).get()).data().revision, 0);
+  assert.equal((await db.collection("movements").get()).size, 0);
+  await assert.rejects(() => approveOpening(db, workbook, review, "approver", snapshot.inventorySha256, timestamps), /pendiente/);
+  const c = await client();
+  await assertFails(sdk.updateDoc(sdk.doc(c.firestore, "inventoryApprovals", result.approvalId), { approval: {} }));
+  await assertFails(sdk.deleteDoc(sdk.doc(c.firestore, "inventoryApprovals", result.approvalId)));
+  await c.store.record(input(), operation(), c.identity);
+  assert.equal((await db.doc(`inventory/${itemId}`).get()).data().stock, 7);
+});
+
+test("a draft changed after preview cannot be approved and is never overwritten", async () => {
+  await env.clearFirestore();
+  const workbook = workbookFixture();
+  await importOpening(db, workbook, FieldValue.serverTimestamp());
+  const snapshot = await inspectOpening(db, workbook);
+  await db.doc(`inventory/${itemId}`).update({ stock: 9 });
+  await assert.rejects(() => approveOpening(db, workbook, review, "approver", snapshot.inventorySha256,
+    { fromDate: date => Timestamp.fromDate(date), serverTimestamp: () => FieldValue.serverTimestamp() }), /cambió/);
+  assert.equal((await db.doc(`inventory/${itemId}`).get()).data().stock, 9);
+  assert.equal((await db.doc("settings/inventory").get()).data().status, "draft");
+  assert.equal((await db.collection("inventoryApprovals").get()).size, 0);
+});
+
+test("editable references synchronize, retry once and preserve stock, unit and warehouse", async () => {
+  const a = await client(), b = await client();
+  const changeId = operation();
+  const data = { itemId, field: "location", value: "A102" };
+  assert.equal((await a.store.editDetail(data, changeId, a.identity)).duplicate, false);
+  assert.equal((await a.store.editDetail(data, changeId, a.identity)).duplicate, true);
+  await assert.rejects(() => a.store.editDetail({ ...data, value: "A103" }, changeId, a.identity), { code: "inventory/id-conflict" });
+  await new Promise((resolve, reject) => {
+    const timer = setTimeout(() => { stop(); reject(new Error("Detail listener timed out")); }, 10000);
+    const stop = sdk.onSnapshot(sdk.doc(b.firestore, "inventoryDetails", itemId), { includeMetadataChanges: true }, snapshot => {
+      if (!snapshot.metadata.fromCache && !snapshot.metadata.hasPendingWrites && snapshot.data()?.location === "A102") { clearTimeout(timer); stop(); resolve(); }
+    }, reject);
+  });
+  await b.store.editDetail({ itemId, field: "umr", value: "PAQUETE" }, operation(), b.identity);
+  const details = (await db.doc(`inventoryDetails/${itemId}`).get()).data();
+  assert.equal(details.umr, "PAQUETE"); assert.equal(details.location, "A102"); assert.equal(details.revision, 2);
+  assert.equal((await db.collection("inventoryDetailChanges").get()).size, 2);
+  const change = (await db.doc(`inventoryDetailChanges/${changeId}`).get()).data();
+  assert.equal(change.valueBefore, "A101"); assert.equal(change.valueAfter, "A102"); assert.equal(change.actorUid, a.identity.uid);
+  const item = (await db.doc(`inventory/${itemId}`).get()).data();
+  assert.equal(item.stock, 10); assert.equal(item.unit, "PAC"); assert.equal(item.warehouse, "A101"); assert.equal(item.revision, 0);
+  await assertFails(sdk.updateDoc(sdk.doc(a.firestore, "inventoryDetails", itemId), { location: "A103" }));
+  await assertFails(sdk.deleteDoc(sdk.doc(a.firestore, "inventoryDetails", itemId)));
+  await assertFails(sdk.updateDoc(sdk.doc(a.firestore, "inventoryDetailChanges", changeId), { valueAfter: "A103" }));
+  await assertFails(sdk.deleteDoc(sdk.doc(a.firestore, "inventoryDetailChanges", changeId)));
+  await a.store.record(input(), operation(), a.identity);
+  const movement = (await db.collection("movements").get()).docs[0].data();
+  assert.equal(movement.unit, "PAC"); assert.equal(movement.warehouse, "A101"); assert.equal(movement.stockAfter, 7);
+});
+
+test("reference rules reject unpaired changes, extra fields and forged authors", async () => {
+  const c = await client();
+  for (const overrides of [{ actorUid: "another" }, { valueAfter: " " }, { field: "unit" }, { extra: true }]) {
+    const id = operation(), batch = sdk.writeBatch(c.firestore);
+    batch.set(sdk.doc(c.firestore, "inventoryDetailChanges", id), { itemId, field: "umr", valueBefore: "PAC", valueAfter: "PAQUETE",
+      revisionBefore: 0, revisionAfter: 1, actorUid: c.identity.uid, createdAt: sdk.serverTimestamp(), ...overrides });
+    batch.set(sdk.doc(c.firestore, "inventoryDetails", itemId), { itemId, umr: "PAQUETE", location: "A101", revision: 1, lastChangeId: id, updatedAt: sdk.serverTimestamp() });
+    await assertFails(batch.commit());
+  }
+  await db.doc("settings/inventory").update({ status: "draft" });
+  await assertFails(sdk.setDoc(sdk.doc(c.firestore, "inventoryDetails", itemId), { itemId, umr: "PAC" }));
 });

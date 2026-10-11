@@ -1,5 +1,6 @@
-import { filterInventory, inventoryMessage, movementInput } from "./inventory.js";
-import { prepareInventory } from "./firestore-inventory.js";
+import { filterInventory, inventoryMessage, movementInput, detailInput } from "./inventory.js?v=0.5";
+import { prepareInventory } from "./firestore-inventory.js?v=0.5";
+import { isOpeningApproved } from "./opening-approval.js?v=0.5";
 
 const number = new Intl.NumberFormat("es-MX");
 const time = new Intl.DateTimeFormat("es-MX", { dateStyle: "short", timeStyle: "short", timeZone: "America/Merida" });
@@ -15,9 +16,43 @@ export function mountInventory(identity) {
   let saving = false;
   let pending;
   let completed;
+  const dialog = get("detail-dialog");
+  let editing;
+  let editPending;
+  let editSaving = false;
 
   function message(text) { get("inventory-notice").textContent = text; get("inventory-notice").hidden = !text; }
   function cell(row, value) { const td = document.createElement("td"); td.textContent = value; row.append(td); return td; }
+  function detailControls() {
+    const allowed = state.online && isOpeningApproved(state.source);
+    get("detail-value").disabled = editSaving || Boolean(editPending);
+    get("detail-cancel").disabled = editSaving || Boolean(editPending);
+    get("detail-submit").disabled = !allowed || editSaving;
+    get("detail-submit").textContent = editSaving ? "Guardando…" : editPending ? "Reintentar confirmación" : "Guardar cambio";
+  }
+  function edit(item, field, value) {
+    if (editSaving || editPending || !state.online || !isOpeningApproved(state.source)) return;
+    editing = { itemId: item.id, field };
+    get("detail-title").textContent = field === "umr" ? "Editar UMR" : "Editar S. Loc. Ubicación";
+    get("detail-label").textContent = field === "umr" ? "UMR" : "S. Loc. Ubicación";
+    get("detail-material").textContent = `${item.sku} · ${item.description}`;
+    get("detail-help").textContent = `Referencia visible del producto. El saldo conserva la unidad ${item.unit} y el almacén ${item.warehouse}; este cambio no convierte cantidades ni traslada existencias.`;
+    get("detail-value").maxLength = field === "umr" ? 20 : 80;
+    get("detail-value").value = value;
+    get("detail-notice").textContent = "";
+    detailControls();
+    dialog.showModal();
+    get("detail-value").select();
+  }
+  function editableCell(row, item, field, value) {
+    const td = cell(row, "");
+    const displayed = document.createElement("span"); displayed.textContent = value; td.append(displayed);
+    const button = document.createElement("button");
+    button.type = "button"; button.className = "text-button cell-edit"; button.textContent = "Cambiar";
+    button.setAttribute("aria-label", `Cambiar ${field === "umr" ? "UMR" : "ubicación"} de ${item.sku}`);
+    button.disabled = !state.online || !isOpeningApproved(state.source) || editSaving || Boolean(editPending);
+    button.addEventListener("click", () => edit(item, field, value)); td.append(button);
+  }
   function selection() {
     const item = state.items.find(item => item.id === select.value);
     get("movement-unit").textContent = item ? `Cantidad en ${item.unit}` : "Cantidad";
@@ -25,15 +60,16 @@ export function mountInventory(identity) {
     get("opening-packages").textContent = p ? `Desglose guardado de apertura: ${number.format(p.cs)} CS CARTONES, ${number.format(p.car)} CAR PAQUETES y ${number.format(p.cxt)} CXT. No se recalcula con los movimientos; faltan factores validados.` : "";
   }
   function controls() {
-    const allowed = state.online && state.source?.status === "active";
+    const allowed = state.online && isOpeningApproved(state.source);
     get("movement-fields").disabled = !allowed || saving || Boolean(pending);
     get("movement-submit").disabled = !allowed || saving;
     get("movement-submit").textContent = saving ? "Confirmando…" : pending ? "Reintentar confirmación" : "Confirmar movimiento";
     get("inventory-print").disabled = !state.online || !state.items.length;
-    get("movement-help").textContent = state.source?.status === "draft"
+    get("movement-help").textContent = !isOpeningApproved(state.source)
       ? "Los movimientos se habilitarán cuando se valide el saldo inicial."
       : !state.online ? "Espera la conexión con el servidor para registrar movimientos."
       : "El saldo y su movimiento se guardan juntos. Las salidas no pueden dejar saldo negativo.";
+    detailControls();
   }
   function draw() {
     if (closed) return;
@@ -41,10 +77,12 @@ export function mountInventory(identity) {
     get("inventory-status").dataset.online = String(state.online);
     get("source-status").textContent = !state.source
       ? state.online ? "Aún no se ha importado la base de inventario." : "Conectando con el inventario…"
-      : state.source.status === "draft" ? "Saldo inicial pendiente de validación · movimientos deshabilitados"
-      : `Corte inicial: ${state.source.sourceAsOf} · validado por ${state.source.approvedBy}`;
+      : !isOpeningApproved(state.source) ? "Saldo inicial pendiente de validación · movimientos deshabilitados"
+      : `Corte inicial: ${time.format(state.source.approval.sourceAsOf.toDate())} · validado por ${state.source.approval.approvedBy}`;
     get("source-description").textContent = state.source
-      ? `${state.source.sourceFile} · ${state.source.sourceSheet}. Stock total sin clasificación. No equivale a disponibilidad libre para surtido.` : "";
+      ? `${state.source.sourceFile} · ${state.source.sourceSheet}. ${isOpeningApproved(state.source)
+        ? "Saldo inicial validado como mercancía utilizable. Operaciones en la unidad de cada material."
+        : "Stock total sin clasificación aprobada. Pendiente de validar para surtido."}` : "";
     get("material-count").textContent = state.source ? number.format(state.items.length) : "—";
     for (const unit of ["PAC", "CAR"]) {
       get(`total-${unit.toLowerCase()}`).textContent = state.source
@@ -58,8 +96,13 @@ export function mountInventory(identity) {
       const row = document.createElement("tr");
       cell(row, item.sku);
       cell(row, item.description);
-      cell(row, number.format(item.stock)).className = "numeric";
-      cell(row, item.unit);
+      cell(row, `${number.format(item.stock)} ${item.unit}`).className = "numeric";
+      for (const key of ["cs", "car", "cxt"]) {
+        cell(row, Number.isSafeInteger(item.openingPackages?.[key]) ? number.format(item.openingPackages[key]) : "—").className = "numeric";
+      }
+      const details = state.details?.find(detail => detail.id === item.id);
+      editableCell(row, item, "umr", details?.umr ?? item.unit);
+      editableCell(row, item, "location", details?.location ?? item.warehouse);
       const button = document.createElement("button");
       button.type = "button";
       button.className = "text-button";
@@ -126,12 +169,35 @@ export function mountInventory(identity) {
       message(`${inventoryMessage(error)}${pending ? ` Folio pendiente: ${pending.id}. Reintenta sin cambiar los datos. Antes de recargar o cerrar sesión, comprueba este folio en el historial.` : ""}`);
     } finally { saving = false; if (!closed) controls(); }
   }
+  async function saveDetail(event) {
+    event.preventDefault();
+    if (editSaving || closed || !editing) return;
+    try {
+      editPending ||= { data: detailInput({ ...editing, value: get("detail-value").value }), id: crypto.randomUUID() };
+      editSaving = true; detailControls();
+      get("detail-notice").textContent = "Confirmando el cambio con el servidor…";
+      const operation = editPending;
+      await store.editDetail(operation.data, operation.id, identity);
+      if (closed) return;
+      editPending = undefined; editing = undefined;
+      dialog.close(); message(`Referencia actualizada. Folio: ${operation.id}`);
+    } catch (error) {
+      if (closed) return;
+      if (["inventory/invalid-detail", "inventory/not-approved", "inventory/not-found", "inventory/id-conflict", "permission-denied", "unauthenticated"].includes(error.code)) editPending = undefined;
+      get("detail-notice").textContent = `${inventoryMessage(error)}${editPending ? ` Folio pendiente: ${editPending.id}. Reintenta sin cambiar el valor. Antes de cerrar sesión o recargar, verifica este valor en la tabla.` : ""}`;
+    } finally { editSaving = false; if (!closed) { detailControls(); draw(); } }
+  }
+  const cancelDetail = () => { if (!editSaving && !editPending) { editing = undefined; dialog.close(); } };
+  const escapeDetail = event => { if (editSaving || editPending) event.preventDefault(); };
   const search = () => draw();
   const connection = () => { store?.connectionChanged(); if (!navigator.onLine) { state.online = false; draw(); } };
   const print = () => { if (state.online) window.print(); };
   get("inventory-search").addEventListener("input", search);
   select.addEventListener("change", selection);
   form.addEventListener("submit", submit);
+  get("detail-form").addEventListener("submit", saveDetail);
+  get("detail-cancel").addEventListener("click", cancelDetail);
+  dialog.addEventListener("cancel", escapeDetail);
   get("inventory-print").addEventListener("click", print);
   window.addEventListener("offline", connection);
   window.addEventListener("online", connection);
@@ -156,6 +222,11 @@ export function mountInventory(identity) {
     closed = true;
     stop?.();
     form.removeEventListener("submit", submit);
+    get("detail-form").removeEventListener("submit", saveDetail);
+    get("detail-cancel").removeEventListener("click", cancelDetail);
+    dialog.removeEventListener("cancel", escapeDetail);
+    dialog.close(); get("detail-form").reset(); get("detail-notice").textContent = "";
+    editing = undefined; editPending = undefined;
     get("inventory-search").removeEventListener("input", search);
     select.removeEventListener("change", selection);
     get("inventory-print").removeEventListener("click", print);

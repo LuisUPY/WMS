@@ -2,7 +2,7 @@
 
 ## Alcance de esta entrega
 
-Interfaz responsive con el logo original, acceso mediante Google, comprobación del permiso de administrador, sesión en memoria, cierre de sesión y caducidad de la sesión de la aplicación a los 30 minutos. La versión 0.3 añade la integración de inventario con Cloud Firestore, pendiente de activar en un proyecto real. SDK web de Firebase fijado en 13.0.0.
+Interfaz responsive con el logo original, acceso mediante Google, comprobación del permiso de administrador, sesión en memoria, cierre de sesión y caducidad de la sesión de la aplicación a los 30 minutos. La versión 0.3 incorporó inventario con Cloud Firestore y la versión 0.4 añade su [aprobación administrativa](OPENING_APPROVAL.md). El estado remoto de cada instalación debe comprobarse por lectura. SDK web de Firebase fijado en 13.0.0.
 
 El acceso requiere la configuración pública de un proyecto Firebase y un permiso de administrador en ese proyecto: nunca se muestra un acceso exitoso simulado. La primera cuenta aprobada está definida localmente en `config/access-policy.json`, excluido de Git y de la publicación.
 
@@ -20,7 +20,7 @@ No incluir contraseñas, tokens OAuth, credenciales de cuenta de servicio ni cla
 
 En Authentication > Settings > Authorized domains, añadir `localhost` para pruebas. Los proyectos nuevos pueden no incluirlo de forma predeterminada.
 
-Para el repositorio actual, el sitio de Pages esperado sería `https://luisupy.github.io/WMS/`, si se publica con esa configuración. El dominio autorizado es `luisupy.github.io`, sin la ruta `/WMS/`. La URL es una previsión del repositorio, no una publicación verificada.
+Para el repositorio actual, la dirección de Pages es `https://luisupy.github.io/WMS/`. El dominio autorizado es `luisupy.github.io`, sin la ruta `/WMS/`. La versión publicada y el acceso OAuth se comprueban por separado de la preparación local.
 
 En la aplicación se utiliza la ventana emergente de Google y el dominio de autenticación proporcionado por Firebase. La contraseña se introduce en Google; WMS no la recibe.
 
