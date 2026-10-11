@@ -1,0 +1,73 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function administrator() {
+      return request.auth != null
+        && request.auth.token.admin == true
+        && request.auth.token.email_verified == true
+        && request.auth.token.firebase.sign_in_provider == 'google.com';
+    }
+    function approved() {
+      return get(/databases/$(database)/documents/settings/inventory).data.status == 'active';
+    }
+    function validMovement(m) {
+      return m.keys().hasOnly(['itemId', 'type', 'quantity', 'reference', 'unit', 'sku', 'warehouse',
+        'stockBefore', 'stockAfter', 'actorUid', 'createdAt'])
+        && m.keys().hasAll(['itemId', 'type', 'quantity', 'reference', 'unit', 'sku', 'warehouse',
+        'stockBefore', 'stockAfter', 'actorUid', 'createdAt'])
+        && m.itemId is string && m.itemId.matches('^[A-Z0-9]+__[0-9]{1,20}$')
+        && m.type in ['entry', 'exit']
+        && m.quantity is int && m.quantity > 0 && m.quantity <= 1000000000
+        && m.reference is string && m.reference.size() > 0 && m.reference.size() <= 160
+        && m.reference.matches('.*[^\\s].*')
+        && m.actorUid == request.auth.uid && m.createdAt == request.time
+        && m.stockBefore is int && m.stockBefore >= 0
+        && m.stockAfter is int && m.stockAfter >= 0 && m.stockAfter <= 9007199254740991
+        && ((m.type == 'entry' && m.stockAfter == m.stockBefore + m.quantity)
+          || (m.type == 'exit' && m.stockAfter == m.stockBefore - m.quantity));
+    }
+    match /settings/inventory {
+      allow read: if administrator();
+      // Import and opening approval are restricted to the trusted Admin SDK.
+      allow write: if false;
+    }
+    match /inventory/{itemId} {
+      allow read: if administrator();
+      allow create, delete: if false;
+      allow update: if administrator() && approved() && validStockUpdate(itemId);
+
+      function validStockUpdate(itemId) {
+        let next = request.resource.data;
+        let movementPath = /databases/$(database)/documents/movements/$(next.lastMovementId);
+        let movement = getAfter(movementPath).data;
+        return next.diff(resource.data).affectedKeys().hasOnly(['stock', 'revision', 'lastMovementId', 'updatedAt'])
+          && next.lastMovementId is string && next.lastMovementId.matches('^[a-zA-Z0-9-]{20,80}$')
+          && !exists(movementPath)
+          && validMovement(movement)
+          && movement.itemId == itemId && movement.sku == resource.data.sku
+          && movement.warehouse == resource.data.warehouse && movement.unit == resource.data.unit
+          && movement.stockBefore == resource.data.stock && movement.stockAfter == next.stock
+          && next.revision is int && next.revision == resource.data.revision + 1 && next.updatedAt == request.time;
+      }
+    }
+    match /movements/{movementId} {
+      allow read: if administrator();
+      allow update, delete: if false;
+      allow create: if administrator() && approved()
+        && movementId.matches('^[a-zA-Z0-9-]{20,80}$')
+        && validMovement(request.resource.data)
+        && pairedStockUpdate(request.resource.data, movementId);
+
+      function pairedStockUpdate(m, movementId) {
+        let path = /databases/$(database)/documents/inventory/$(m.itemId);
+        let before = get(path).data;
+        let after = getAfter(path).data;
+        return before.stock == m.stockBefore && after.stock == m.stockAfter
+          && after.lastMovementId == movementId && after.revision == before.revision + 1
+          && after.updatedAt == request.time
+          && before.sku == m.sku && before.warehouse == m.warehouse && before.unit == m.unit;
+      }
+    }
+    match /{document=**} { allow read, write: if false; }
+  }
+}

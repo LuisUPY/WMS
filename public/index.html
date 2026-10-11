@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Acceso de administrador al portal WMS.">
+  <meta name="theme-color" content="#17466b">
+  <meta name="referrer" content="strict-origin-when-cross-origin">
+  <title>Acceso de administrador · WMS</title>
+  <link rel="icon" href="./assets/wms-logo.png" type="image/png">
+  <link rel="stylesheet" href="./styles.css">
+  <script defer src="./bootstrap.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Ir al contenido</a>
+  <div class="page-shell">
+    <header class="site-header">
+      <a class="brand" href="./" aria-label="WMS, inicio">
+        <img src="./assets/wms-logo.png" alt="WMS" width="308" height="108">
+        <span class="brand-divider" aria-hidden="true"></span>
+        <span class="brand-caption">Portal de<br>administración</span>
+      </a>
+      <span class="header-label"><span class="status-dot" aria-hidden="true"></span> Acceso autorizado</span>
+    </header>
+
+    <main id="main">
+      <section class="login-layout" id="login-view" aria-label="Acceso al portal">
+        <div class="introduction">
+          <div class="warehouse-art" aria-hidden="true">
+            <div class="art-grid"></div>
+            <div class="art-label"><span class="tiny-square"></span> ORDEN EN CADA PASO</div>
+            <div class="warehouse-line warehouse-line-one"></div>
+            <div class="warehouse-line warehouse-line-two"></div>
+            <div class="rack rack-one"><i></i><div class="shelf"><b class="parcel wide"></b><b class="parcel small"></b></div><div class="shelf"><b class="parcel small"></b><b class="parcel wide"></b></div><div class="shelf"><b class="parcel wide"></b><b class="parcel small"></b></div></div>
+            <div class="rack rack-two"><i></i><div class="shelf"><b class="parcel wide"></b><b class="parcel small"></b></div><div class="shelf"><b class="parcel small"></b><b class="parcel wide"></b></div><div class="shelf"><b class="parcel wide"></b><b class="parcel small"></b></div></div>
+            <div class="art-floor"></div>
+            <div class="verification-tag"><span>✓</span><div>Todo empieza con<br><strong>un acceso seguro.</strong></div></div>
+          </div>
+        </div>
+
+        <div class="login-card">
+          <p class="card-kicker">QUÉ BUENO TENERTE AQUÍ</p>
+          <h1>Bienvenido a WMS</h1>
+          <p class="card-copy">Inicia sesión con tu cuenta de Google autorizada para continuar.</p>
+
+          <button class="google-button" id="google-signin" type="button" aria-describedby="access-description" disabled>
+            <svg class="google-mark" viewBox="0 0 24 24" aria-hidden="true"><path fill="#4285F4" d="M21.6 12.23c0-.71-.06-1.39-.18-2.05H12v3.88h5.38a4.6 4.6 0 0 1-1.99 3.02v2.51h3.22c1.88-1.73 2.99-4.28 2.99-7.36Z"/><path fill="#34A853" d="M12 22c2.7 0 4.96-.9 6.61-2.41l-3.22-2.51c-.9.6-2.04.96-3.39.96-2.6 0-4.81-1.76-5.6-4.12H3.08v2.59A10 10 0 0 0 12 22Z"/><path fill="#FBBC05" d="M6.4 13.92A6 6 0 0 1 6.09 12c0-.67.11-1.32.31-1.92V7.49H3.08A10 10 0 0 0 2 12c0 1.61.39 3.14 1.08 4.51l3.32-2.59Z"/><path fill="#EA4335" d="M12 5.96c1.47 0 2.79.5 3.83 1.5l2.87-2.87A9.64 9.64 0 0 0 12 2a10 10 0 0 0-8.92 5.49l3.32 2.59C7.19 7.72 9.4 5.96 12 5.96Z"/></svg>
+            <span id="google-label">Continuar con Google</span>
+            <span class="button-arrow" aria-hidden="true">↗</span>
+          </button>
+          <p class="access-notice" id="access-notice" role="alert" hidden></p>
+
+          <div class="card-separator"></div>
+          <div class="access-description" id="access-description"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="m12 3 8 3v5c0 5-8 10-8 10S4 16 4 11V6l8-3Z"/><path d="m8 11 3 3 5-5"/></svg><p><strong>Solo personal autorizado</strong><br>Tu cuenta debe tener permiso de administrador.</p></div>
+          <details class="access-help"><summary>¿Necesitas acceso? <span aria-hidden="true">+</span></summary><p>Solicita la autorización de tu cuenta al responsable de WMS. Si utilizas varias cuentas de Google, selecciona la cuenta autorizada.</p></details>
+          <p class="temporary-session">Sesión temporal · 30 minutos</p>
+        </div>
+      </section>
+
+      <section class="inventory-layout" id="account-view" hidden aria-label="Inventario de almacén">
+        <div class="inventory-heading">
+          <div><p class="card-kicker">ALMACÉN A101 · MÉRIDA</p><h1 id="account-title" tabindex="-1">Inventario<span class="gold-dot">.</span></h1><p id="inventory-status" role="status">Conectando…</p></div>
+          <div class="account-tools"><div class="identity"><span class="avatar" id="account-initial" aria-hidden="true"></span><div><strong id="account-name"></strong><span id="account-email"></span></div><span class="role-pill">Administrador</span></div><button class="text-button" id="signout" type="button">Cerrar sesión</button></div>
+        </div>
+        <div class="source-panel"><strong id="source-status"></strong><p id="source-description"></p></div>
+        <p class="access-notice" id="inventory-notice" role="status" hidden></p>
+        <div class="inventory-totals"><div><span>Materiales</span><strong id="material-count">—</strong></div><div><span>Saldo en PAC</span><strong id="total-pac">—</strong></div><div><span>Saldo en CAR</span><strong id="total-car">—</strong></div></div>
+        <div class="inventory-workspace">
+          <div class="inventory-panel">
+            <div class="inventory-toolbar"><label>Buscar material<input id="inventory-search" type="search" placeholder="SKU, descripción o código" autocomplete="off"></label><button class="secondary-button" id="inventory-print" type="button" disabled>Imprimir</button></div>
+            <p id="inventory-count" class="small-copy"></p>
+            <div class="table-scroll" tabindex="0" role="region" aria-label="Materiales del inventario"><table><caption class="sr-only">Existencias por material, en su unidad de control</caption><thead><tr><th scope="col">Material</th><th scope="col">Descripción</th><th scope="col">Saldo total</th><th scope="col">Unidad</th><th scope="col" class="actions-column">Detalle</th></tr></thead><tbody id="inventory-rows"></tbody></table></div>
+            <p id="inventory-empty" class="small-copy">No hay materiales confirmados por el servidor.</p>
+          </div>
+          <aside class="inventory-panel movement-panel">
+            <h2 id="movement-title" tabindex="-1">Registrar movimiento</h2>
+            <p id="movement-help" class="small-copy"></p>
+            <form id="movement-form">
+              <fieldset id="movement-fields" disabled><legend class="sr-only">Datos del movimiento</legend>
+                <label>Material<select id="movement-item" required><option value="">Selecciona un material</option></select></label>
+                <label>Tipo<select id="movement-type"><option value="entry">Entrada</option><option value="exit">Salida</option></select></label>
+                <label><span id="movement-unit">Cantidad</span><input id="movement-quantity" type="number" min="1" max="1000000000" step="1" required inputmode="numeric"></label>
+                <label>Referencia documental<input id="movement-reference" maxlength="160" required autocomplete="off" placeholder="Documento o motivo"></label>
+              </fieldset>
+              <button class="primary-button" id="movement-submit" type="submit" disabled>Confirmar movimiento</button>
+            </form>
+            <p class="small-copy" id="opening-packages"></p>
+          </aside>
+        </div>
+        <section class="inventory-panel history-panel" aria-label="Historial de movimientos"><h2>Últimos 30 movimientos</h2><div class="table-scroll" tabindex="0" role="region" aria-label="Movimientos confirmados"><table><thead><tr><th scope="col">Fecha · Mérida</th><th scope="col">Material</th><th scope="col">Tipo</th><th scope="col">Cantidad</th><th scope="col">Referencia</th><th scope="col">Folio</th><th scope="col">Responsable (UID)</th></tr></thead><tbody id="movement-rows"></tbody></table></div><p id="movements-empty" class="small-copy">Aún no hay movimientos confirmados.</p></section>
+        <p class="temporary-session">La sesión termina al recargar, cerrar esta pestaña o después de 30 minutos.</p>
+      </section>
+      <noscript><p class="noscript-message">Activa JavaScript en tu navegador para iniciar sesión con Google.</p></noscript>
+    </main>
+
+    <footer class="site-footer"><span>WMS <span class="footer-slash">/</span> Warehouse Management System</span><span id="system-version">Versión 0.3</span></footer>
+  </div>
+</body>
+</html>
