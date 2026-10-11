@@ -85,14 +85,104 @@ service cloud.firestore {
     match /inventoryDetails/{itemId} {
       allow read: if administrator();
       allow delete: if false;
-      allow create, update: if administrator() && approved() && validDetailWrite(itemId);
+      allow create, update: if administrator() && validDetailWrite(itemId);
       function validDetailWrite(itemId) {
         let next = request.resource.data;
+        return next.keys().hasAny(['operationId']) ? validOperationDetailWrite(itemId, next) : approved() && validLegacyDetailWrite(itemId, next);
+      }
+      function validLegacyDetailWrite(itemId, next) {
         let path = /databases/$(database)/documents/inventoryDetailChanges/$(next.lastChangeId);
         let change = getAfter(path).data;
         return next.lastChangeId is string && next.lastChangeId.matches('^[a-zA-Z0-9-]{20,80}$')
           && !exists(path) && validDetailChange(change) && pairedDetail(itemId, next, change, next.lastChangeId);
       }
+    }
+    function operationHeader(o) {
+      return o.keys().hasOnly(['reference', 'lines', 'actorUid', 'createdAt'])
+        && o.keys().hasAll(['reference', 'lines', 'actorUid', 'createdAt'])
+        && o.reference is string && o.reference.size() > 0 && o.reference.size() <= 160 && o.reference.matches('.*[^\\s].*')
+        && o.actorUid == request.auth.uid && o.createdAt == request.time
+        && o.lines is map && o.lines.size() >= 1 && o.lines.size() <= 5;
+    }
+    function operationStock(itemId, l, operationId) {
+      let path = /databases/$(database)/documents/inventory/$(itemId);
+      let before = get(path).data;
+      let after = getAfter(path).data;
+      return l.keys().hasOnly(['type', 'quantity', 'sku', 'unit', 'warehouse', 'stockBefore', 'stockAfter', 'revisionBefore', 'revisionAfter'])
+        && l.keys().hasAll(['type', 'quantity', 'sku', 'unit', 'warehouse', 'stockBefore', 'stockAfter', 'revisionBefore', 'revisionAfter'])
+        && l.type in ['entry', 'exit'] && l.quantity is int && l.quantity > 0 && l.quantity <= 1000000000
+        && l.sku == before.sku && l.unit == before.unit && l.warehouse == before.warehouse
+        && l.stockBefore == before.stock && l.stockAfter is int && l.stockAfter >= 0 && l.stockAfter <= 9007199254740991
+        && ((l.type == 'entry' && l.stockAfter == l.stockBefore + l.quantity)
+          || (l.type == 'exit' && l.stockAfter == l.stockBefore - l.quantity))
+        && l.revisionBefore == before.revision && l.revisionAfter == before.revision + 1
+        && after.diff(before).affectedKeys().hasOnly(['stock', 'revision', 'lastMovementId', 'lastOperationId', 'updatedAt'])
+        && after.stock == l.stockAfter && after.revision == l.revisionAfter && after.updatedAt == request.time
+        && after.lastMovementId == operationId && after.lastOperationId == operationId;
+    }
+    function operationPackages(itemId, l, operationId) {
+      let path = /databases/$(database)/documents/inventoryDetails/$(itemId);
+      let item = get(/databases/$(database)/documents/inventory/$(itemId)).data;
+      let before = exists(path) ? get(path).data : {'umr': item.unit, 'location': item.warehouse, 'revision': 0};
+      let packages = {'cs': before.get('cs', item.openingPackages.cs), 'car': before.get('car', item.openingPackages.car),
+        'cxt': before.get('cxt', item.openingPackages.cxt)};
+      let after = getAfter(path).data;
+      return l.keys().hasOnly(['type', 'packagesBefore', 'packagesAfter', 'revisionBefore', 'revisionAfter'])
+        && l.keys().hasAll(['type', 'packagesBefore', 'packagesAfter', 'revisionBefore', 'revisionAfter'])
+        && l.type == 'packages' && l.packagesBefore == packages && validPackages(l.packagesAfter)
+        && l.revisionBefore == before.revision && l.revisionAfter == before.revision + 1
+        && after.keys().hasOnly(['itemId', 'umr', 'location', 'cs', 'car', 'cxt', 'revision', 'lastChangeId', 'operationId', 'updatedAt'])
+        && after.keys().hasAll(['itemId', 'umr', 'location', 'cs', 'car', 'cxt', 'revision', 'lastChangeId', 'operationId', 'updatedAt'])
+        && after.itemId == itemId && after.umr == before.umr && after.location == before.location
+        && after.cs == l.packagesAfter.cs && after.car == l.packagesAfter.car && after.cxt == l.packagesAfter.cxt
+        && after.revision == l.revisionAfter && after.lastChangeId == operationId && after.operationId == operationId
+        && after.updatedAt == request.time;
+    }
+    function validPackages(p) {
+      return p is map && p.keys().hasOnly(['cs', 'car', 'cxt']) && p.keys().hasAll(['cs', 'car', 'cxt'])
+        && p.cs is int && p.cs >= 0 && p.cs <= 1000000000
+        && p.car is int && p.car >= 0 && p.car <= 1000000000
+        && p.cxt is int && p.cxt >= 0 && p.cxt <= 1000000000;
+    }
+    function operationLine(o, operationId, index) {
+      let itemId = o.lines.keys()[index];
+      let l = o.lines[itemId];
+      return itemId.matches('^[A-Z0-9]+__[0-9]{1,20}$')
+        && (l.type == 'packages' ? packageWitness(itemId, operationId)
+          : l.type in ['entry', 'exit'] && stockWitness(itemId, operationId));
+    }
+    function stockWitness(itemId, operationId) {
+      let after = getAfter(/databases/$(database)/documents/inventory/$(itemId)).data;
+      return after.lastMovementId == operationId && after.lastOperationId == operationId && after.updatedAt == request.time;
+    }
+    function packageWitness(itemId, operationId) {
+      let after = getAfter(/databases/$(database)/documents/inventoryDetails/$(itemId)).data;
+      return after.lastChangeId == operationId && after.operationId == operationId && after.updatedAt == request.time;
+    }
+    function validOperationDetailWrite(itemId, next) {
+      let path = /databases/$(database)/documents/operations/$(next.operationId);
+      let o = getAfter(path).data;
+      // The operation checks a fresh witness for every line. Each leaf checks
+      // its full before/after pair, keeping evaluation bounded per document.
+      return !exists(path) && o.actorUid == request.auth.uid && o.createdAt == request.time
+        && operationPackages(itemId, o.lines[itemId], next.operationId);
+    }
+    function validOperationStockWrite(itemId, next) {
+      let path = /databases/$(database)/documents/operations/$(next.lastOperationId);
+      let o = getAfter(path).data;
+      return !exists(path) && o.actorUid == request.auth.uid && o.createdAt == request.time
+        && operationStock(itemId, o.lines[itemId], next.lastOperationId);
+    }
+    match /operations/{operationId} {
+      allow read: if administrator();
+      allow update, delete: if false;
+      allow create: if administrator() && approved() && operationId.matches('^[a-zA-Z0-9-]{20,80}$')
+        && operationHeader(request.resource.data)
+        && operationLine(request.resource.data, operationId, 0)
+        && (request.resource.data.lines.size() < 2 || operationLine(request.resource.data, operationId, 1))
+        && (request.resource.data.lines.size() < 3 || operationLine(request.resource.data, operationId, 2))
+        && (request.resource.data.lines.size() < 4 || operationLine(request.resource.data, operationId, 3))
+        && (request.resource.data.lines.size() < 5 || operationLine(request.resource.data, operationId, 4));
     }
     match /inventoryDetailChanges/{changeId} {
       allow read: if administrator();
@@ -106,10 +196,13 @@ service cloud.firestore {
     match /inventory/{itemId} {
       allow read: if administrator();
       allow create, delete: if false;
-      allow update: if administrator() && approved() && validStockUpdate(itemId);
+      allow update: if administrator() && validStockUpdate(itemId);
 
       function validStockUpdate(itemId) {
         let next = request.resource.data;
+        return next.get('lastOperationId', '') == next.lastMovementId ? validOperationStockWrite(itemId, next) : approved() && validLegacyStockUpdate(itemId, next);
+      }
+      function validLegacyStockUpdate(itemId, next) {
         let movementPath = /databases/$(database)/documents/movements/$(next.lastMovementId);
         let movement = getAfter(movementPath).data;
         return next.diff(resource.data).affectedKeys().hasOnly(['stock', 'revision', 'lastMovementId', 'updatedAt'])

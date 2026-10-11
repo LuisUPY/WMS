@@ -1,11 +1,11 @@
 # -WMS
 Warehouse Management System by Gerardo Escalante
 
-## Inventario online — versión 0.6
+## Inventario online — versión 0.7
 
-Acceso Google con permiso de administrador e inventario compartido mediante Cloud Firestore. Consulta y búsqueda, impresión, entradas y salidas en la unidad de cada material e historial de los últimos 30 movimientos. El saldo y su movimiento se confirman en una transacción. Sesión y caché en memoria, sin datos operativos persistentes en el navegador.
+Acceso Google con permiso de administrador e inventario compartido mediante Cloud Firestore. Consulta y búsqueda, impresión, entradas y salidas en la unidad de cada material e historial de los últimos 30 movimientos. Los saldos y el movimiento completo se confirman en una transacción. Sesión y caché en memoria, sin datos operativos persistentes en el navegador.
 
-La tabla se ordena por descripción y permite editar CS CARTONES, CAR PAQUETES, CXT, UMR y S. Loc. Ubicación mediante diálogos, con historial de cambios. Las tres cantidades parten del desglose de apertura y admiten enteros desde cero; corregirlas no cambia el saldo total ni las recalcula con movimientos; la unidad y el almacén que controlan las cantidades permanecen intactos. Los cambios confirmados se comparten entre sesiones.
+La tabla se ordena por descripción. Registrar movimiento permite incluir de uno a cinco productos distintos, con una referencia común y una operación por producto: Entrada, Salida o Cambiar desglose. CS CARTONES, CAR PAQUETES y CXT se corrigen desde ese formulario; estas correcciones no alteran el saldo total. UMR y S. Loc. Ubicación conservan sus diálogos de referencia visible. Todo el movimiento se confirma junto, con un folio y un historial desplegable; si falla una línea, no se guarda ninguna. Los cambios confirmados se comparten entre sesiones.
 
 `DB/DataBase.xlsx` es la fuente de la carga inicial. La base central de trabajo será Firestore: editar el Excel después de cargarlo no actualiza automáticamente el sistema, y los movimientos web no reescriben ese archivo.
 
@@ -27,6 +27,6 @@ La primera cuenta administradora está definida en `config/access-policy.json`, 
 
 ## Versiones
 
-La versión inicial visible es **0.1**. Cada actualización del sistema incrementa la versión en **0.1**: 0.1 → 0.2 → 0.3 → 0.4 → 0.5 → 0.6. La versión cambia una vez por actualización entregada, junto con su entrada en [CHANGELOG.md](CHANGELOG.md).
+La versión inicial visible es **0.1**. Cada actualización del sistema incrementa la versión en **0.1**: 0.1 → 0.2 → 0.3 → 0.4 → 0.5 → 0.6 → 0.7. La versión cambia una vez por actualización entregada, junto con su entrada en [CHANGELOG.md](CHANGELOG.md).
 
-Mantener sincronizados el pie de `public/index.html`, `package.json` y las referencias de recursos web `?v=0.6`. La versión visible 0.6 corresponde a 0.6.0 en el paquete. La próxima actualización será 0.7.
+Mantener sincronizados el pie de `public/index.html`, `package.json` y las referencias de recursos web `?v=0.7`. La versión visible 0.7 corresponde a 0.7.0 en el paquete. La próxima actualización será 0.8.

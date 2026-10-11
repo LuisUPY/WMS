@@ -89,16 +89,16 @@ const gatewayStub = `
     await page.route('**/config.js*', route => route.fulfill({ contentType: 'text/javascript', body: `export const firebaseConfig = { apiKey: 'AIzaSyTEST_CONFIG_NOT_A_REAL_API_KEY', authDomain: 'wms-login-test.firebaseapp.com', projectId: 'wms-login-test', appId: '1:123456789:web:localtest' };` }));
     await page.reload();
     const actualSDK = await page.evaluate(async () => {
-      const module = await import('./firebase-client.js?v=0.6');
+      const module = await import('./firebase-client.js?v=0.7');
       const service = await module.prepareGoogleAccess();
       const { app } = await module.prepareFirebaseSession();
       const sdk = await import('https://www.gstatic.com/firebasejs/13.0.0/firebase-firestore.js');
       const database = sdk.initializeFirestore(app, { localCache: sdk.memoryLocalCache() });
-      const { createInventoryStore } = await import('./inventory-store.js?v=0.6');
+      const { createInventoryStore } = await import('./inventory-store.js?v=0.7');
       const store = createInventoryStore(database, sdk);
-      return { signIn: typeof service.signIn, signOut: typeof service.signOut, record: typeof store.record };
+      return { signIn: typeof service.signIn, signOut: typeof service.signOut, record: typeof store.record, recordOperation: typeof store.recordOperation };
     });
-    assert.deepEqual(actualSDK, { signIn: 'function', signOut: 'function', record: 'function' });
+    assert.deepEqual(actualSDK, { signIn: 'function', signOut: 'function', record: 'function', recordOperation: 'function' });
     assert.deepEqual(errors, []);
     console.log('Browser checks passed: missing config, administrator, denial, cancellation, sign-out, reload, disabled storage, mobile layout, private file isolation and actual Firebase SDK initialization. This test does not exercise live OAuth.');
   } finally { await browser.close(); }

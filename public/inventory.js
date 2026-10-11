@@ -37,6 +37,37 @@ export function detailValues(item, details) {
     cxt: details?.cxt ?? item.openingPackages.cxt };
 }
 
+export const MAX_OPERATION_PRODUCTS = 5;
+
+export function operationInput(input) {
+  const reference = typeof input.reference === "string" ? input.reference.trim() : "";
+  if (!reference || reference.length > 160 || !Array.isArray(input.lines) || !input.lines.length ||
+      input.lines.length > MAX_OPERATION_PRODUCTS) throw new InventoryError("inventory/invalid-operation");
+  const seen = new Set();
+  const lines = input.lines.map(line => {
+    if (seen.has(line.itemId)) throw new InventoryError("inventory/duplicate-product");
+    seen.add(line.itemId);
+    if (line.type !== "packages") {
+      const { itemId, type, quantity } = movementInput({ ...line, reference });
+      return { itemId, type, quantity };
+    }
+    const values = Object.fromEntries(["cs", "car", "cxt"].map(field =>
+      [field, detailInput({ itemId: line.itemId, field, value: line[field] }).value]));
+    return { itemId: line.itemId, type: "packages", ...values };
+  });
+  return { reference, lines };
+}
+
+export function operationMatches(saved, data, actorUid) {
+  return saved.actorUid === actorUid && saved.reference === data.reference &&
+    Object.keys(saved.lines).length === data.lines.length && data.lines.every(line => {
+      const previous = saved.lines[line.itemId];
+      return previous?.type === line.type && (line.type === "packages"
+        ? ["cs", "car", "cxt"].every(field => previous.packagesAfter[field] === line[field])
+        : previous.quantity === line.quantity);
+    });
+}
+
 export function filterInventory(items, search = "") {
   const term = search.trim().toLocaleLowerCase("es");
   return items.filter(item => `${item.sku} ${item.description} ${item.alternateCode || ""}`.toLocaleLowerCase("es").includes(term))
@@ -49,6 +80,8 @@ export function inventoryMessage(error) {
     "inventory/not-approved": "El saldo inicial está pendiente de validación. Los movimientos aún no están habilitados.",
     "inventory/offline": "Sin conexión confirmada. Espera a que el inventario vuelva a estar en línea.",
     "inventory/invalid-movement": "Indica un material, una cantidad entera positiva y una referencia de hasta 160 caracteres.",
+    "inventory/invalid-operation": "Añade de 1 a 5 productos e indica el documento o motivo del movimiento.",
+    "inventory/duplicate-product": "Cada producto puede aparecer una vez por movimiento. Revisa los productos seleccionados.",
     "inventory/invalid-stock": "Este material tiene un saldo inválido. Solicita su revisión.",
     "inventory/insufficient-stock": "No hay saldo suficiente. Revisa la existencia actual.",
     "inventory/not-found": "El material ya no está disponible. Actualiza tu consulta.",

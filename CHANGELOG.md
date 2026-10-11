@@ -1,5 +1,14 @@
 # Historial de versiones
 
+## 0.7 — 2026-10-11
+
+- Formulario de movimientos con una referencia común y hasta cinco productos distintos. Cada producto permite Entrada, Salida o Cambiar desglose; se pueden añadir y quitar productos conservando los datos capturados.
+- CS CARTONES, CAR PAQUETES y CXT se corrigen juntos desde Cambiar desglose. Se retiraron sus botones de la tabla; UMR y Ubicación mantienen sus diálogos. Las correcciones de desglose no afectan el saldo total.
+- Confirmación atómica de todas las líneas, folio único, reintentos idempotentes y rechazo completo si una salida no tiene saldo. Sin saldos optimistas.
+- Historial agrupado por folio con detalles desplegables, valores antes/después y responsables. Los registros de versiones anteriores se conservan visibles.
+- Interfaz adaptable a computadora y móvil; formularios bloqueados sin conexión y sesión/caché en memoria.
+- Reglas y pruebas de pares completos, cinco productos, concurrencia, rechazo de datos falsificados y compatibilidad con referencias anteriores.
+
 ## 0.6 — 2026-10-11
 
 - CS CARTONES, CAR PAQUETES y CXT editables mediante diálogos numéricos: enteros desde cero, con guardado confirmado y auditoría inmutable.
@@ -53,4 +62,4 @@
 - Simplificación del login: eliminación del icono de candado, la etiqueta «Administrador» y los tres textos introductorios señalados.
 - Indicador «Versión 0.1» en el pie de página.
 
-Cada actualización posterior incrementará la versión en 0.1 y se registrará aquí. La siguiente versión será 0.7.
+Cada actualización posterior incrementará la versión en 0.1 y se registrará aquí. La siguiente versión será 0.8.

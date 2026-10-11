@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { access } from "node:fs/promises";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { filterInventory, movementInput, nextStock, detailInput } from "../public/inventory.js";
+import { filterInventory, movementInput, nextStock, detailInput, operationInput } from "../public/inventory.js";
 import { readInventoryWorkbook, importOpening } from "../scripts/inventory-import.mjs";
 
 const item = { id: "A101__12345678", sku: "12345678", description: "Material de prueba", stock: 10 };
@@ -36,6 +36,16 @@ test("package corrections accept zero and integers, rejecting empty, fractional 
     }
   }
   assert.equal(detailInput({ itemId: item.id, field: "umr", value: " PAC " }).value, "PAC");
+});
+
+test("one operation validates a shared reference, distinct products and complete package values", () => {
+  const lines = [{ itemId: item.id, type: "entry", quantity: "4" }, { itemId: "A101__87654321", type: "packages", cs: "0", car: "2", cxt: "1" }];
+  const data = operationInput({ reference: " TEST ", lines });
+  assert.equal(data.reference, "TEST"); assert.equal(data.lines[0].quantity, 4); assert.equal(data.lines[1].cs, 0);
+  assert.throws(() => operationInput({ reference: "TEST", lines: [lines[0], lines[0]] }), { code: "inventory/duplicate-product" });
+  for (const bad of [{ reference: " " }, { lines: [] }, { lines: Array(6).fill(lines[0]) }, { lines: [{ ...lines[1], cs: "" }] }]) {
+    assert.throws(() => operationInput({ reference: "TEST", lines, ...bad }));
+  }
 });
 
 test("search matches SKU, description and alternate code", () => {

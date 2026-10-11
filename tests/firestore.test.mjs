@@ -345,3 +345,106 @@ test("package rules reject invalid numbers and changes to other columns or the o
   await assertFails(batch.commit());
   await assertSucceeds(batchFor(0).commit());
 });
+
+async function extraProducts(count = 5) {
+  const ids = Array.from({ length: count }, (_, i) => `A101__${23456780 + i}`);
+  for (const id of ids) await db.doc(`inventory/${id}`).set({ ...sample, sku: id.split("__")[1] });
+  return ids;
+}
+
+test("multi-product operations commit stock and package changes together and retry with one folio", async () => {
+  const ids = await extraProducts(2), c = await client(), id = operation();
+  const data = { reference: "MULTI-TEST", lines: [{ itemId, type: "exit", quantity: 4 },
+    { itemId: ids[0], type: "entry", quantity: 8 }, { itemId: ids[1], type: "packages", cs: 2, car: 0, cxt: 3 }] };
+  assert.equal((await c.store.recordOperation(data, id, c.identity)).duplicate, false);
+  assert.equal((await c.store.recordOperation(data, id, c.identity)).duplicate, true);
+  assert.equal((await db.doc(`inventory/${itemId}`).get()).data().stock, 6);
+  assert.equal((await db.doc(`inventory/${ids[0]}`).get()).data().stock, 18);
+  assert.equal((await db.doc(`inventory/${ids[1]}`).get()).data().stock, 10);
+  assert.equal((await db.doc(`inventoryDetails/${ids[1]}`).get()).data().cs, 2);
+  const audit = (await db.doc(`operations/${id}`).get()).data();
+  assert.equal(Object.keys(audit.lines).length, 3); assert.equal(audit.reference, "MULTI-TEST"); assert.equal(audit.actorUid, c.identity.uid);
+  assert.equal((await db.collection("operations").get()).size, 1);
+  await assert.rejects(() => c.store.recordOperation({ ...data, reference: "OTHER" }, id, c.identity), { code: "inventory/id-conflict" });
+  await assertFails(sdk.updateDoc(sdk.doc(c.firestore, "operations", id), { reference: "rewritten" }));
+  await assertFails(sdk.deleteDoc(sdk.doc(c.firestore, "operations", id)));
+});
+
+test("an invalid or insufficient line leaves every product and the operation unchanged", async () => {
+  const [other] = await extraProducts(1), c = await client();
+  const data = { reference: "ALL-OR-NOTHING", lines: [{ itemId, type: "entry", quantity: 2 }, { itemId: other, type: "exit", quantity: 11 }] };
+  await assert.rejects(() => c.store.recordOperation(data, operation(), c.identity), { code: "inventory/insufficient-stock" });
+  assert.equal((await db.doc(`inventory/${itemId}`).get()).data().stock, 10);
+  assert.equal((await db.doc(`inventory/${other}`).get()).data().stock, 10);
+  assert.equal((await db.collection("operations").get()).size, 0);
+});
+
+test("five-product operations stay within rule limits for stock and legacy package references", async () => {
+  const ids = await extraProducts(), c = await client();
+  await c.store.recordOperation({ reference: "FIVE-STOCK", lines: ids.map(itemId => ({ itemId, type: "entry", quantity: 1 })) }, operation(), c.identity);
+  for (const id of ids) await db.doc(`inventoryDetails/${id}`).set({ itemId: id, umr: "PAQUETE", location: "A102", revision: 2,
+    lastChangeId: "legacy-reference-change", updatedAt: new Date() });
+  await c.store.recordOperation({ reference: "FIVE-PACKAGES", lines: ids.map(itemId => ({ itemId, type: "packages", cs: 3, car: 0, cxt: 2 })) }, operation(), c.identity);
+  assert.equal((await db.collection("operations").get()).size, 2);
+  for (const id of ids) {
+    const detail = (await db.doc(`inventoryDetails/${id}`).get()).data();
+    assert.equal(detail.cs, 3); assert.equal(detail.umr, "PAQUETE"); assert.equal(detail.location, "A102");
+  }
+  await c.store.recordOperation({ reference: "FIVE-AGAIN", lines: ids.map(itemId => ({ itemId, type: "packages", cs: 4, car: 1, cxt: 0 })) }, operation(), c.identity);
+  const fresh = await client();
+  await fresh.store.editDetail({ itemId: ids[0], field: "umr", value: "PAC" }, operation(), fresh.identity);
+  await fresh.store.record({ ...input("entry", 1), itemId: ids[0] }, operation(), fresh.identity);
+  assert.equal((await db.doc(`inventoryDetails/${ids[0]}`).get()).data().cs, 4);
+  assert.equal((await db.doc(`inventory/${ids[0]}`).get()).data().stock, 12);
+});
+
+test("operation rules reject incomplete pairs, forged authors and replay against new stock", async () => {
+  const c = await client(), id = operation();
+  const line = { type: "entry", quantity: 3, sku: sample.sku, unit: "PAC", warehouse: "A101",
+    stockBefore: 10, stockAfter: 13, revisionBefore: 0, revisionAfter: 1 };
+  const root = { reference: "FORGED", lines: { [itemId]: line }, actorUid: c.identity.uid, createdAt: sdk.serverTimestamp() };
+  await assertFails(sdk.setDoc(sdk.doc(c.firestore, "operations", id), root));
+  for (const override of [{ actorUid: "other" }, { reference: " " }, { lines: { [itemId]: { ...line, quantity: 8 } } }]) {
+    const batch = sdk.writeBatch(c.firestore);
+    batch.set(sdk.doc(c.firestore, "operations", id), { ...root, ...override });
+    batch.update(sdk.doc(c.firestore, "inventory", itemId), { stock: 13, revision: 1, lastMovementId: id, lastOperationId: id, updatedAt: sdk.serverTimestamp() });
+    await assertFails(batch.commit());
+  }
+  const fresh = await client();
+  await fresh.store.recordOperation({ reference: "REAL-TEST", lines: [{ itemId, type: "entry", quantity: 3 }] }, id, fresh.identity);
+  await assertFails(sdk.updateDoc(sdk.doc(c.firestore, "inventory", itemId), { stock: 16, revision: 2, updatedAt: sdk.serverTimestamp() }));
+});
+
+test("package operations reject forged values, extra writes, altered references and a pending opening", async () => {
+  const c = await client();
+  function batchFor(after = { cs: 2, car: 0, cxt: 1 }, changes = {}) {
+    const id = operation(), batch = sdk.writeBatch(c.firestore);
+    batch.set(sdk.doc(c.firestore, "operations", id), { reference: "PACKAGE-TEST", actorUid: c.identity.uid, createdAt: sdk.serverTimestamp(),
+      lines: { [itemId]: { type: "packages", packagesBefore: sample.openingPackages, packagesAfter: after, revisionBefore: 0, revisionAfter: 1 } } });
+    batch.set(sdk.doc(c.firestore, "inventoryDetails", itemId), { itemId, umr: "PAC", location: "A101", ...after,
+      revision: 1, lastChangeId: id, operationId: id, updatedAt: sdk.serverTimestamp(), ...changes });
+    return batch;
+  }
+  for (const after of [{ cs: -1, car: 0, cxt: 1 }, { cs: 1.5, car: 0, cxt: 1 }, { cs: "2", car: 0, cxt: 1 },
+    { cs: 2, car: 0, cxt: 1, extra: 3 }]) await assertFails(batchFor(after).commit());
+  await assertFails(batchFor(undefined, { umr: "ALTERED" }).commit());
+  const batch = batchFor();
+  batch.update(sdk.doc(c.firestore, "inventory", itemId), { stock: 20 });
+  await assertFails(batch.commit());
+  await db.doc("settings/inventory").update({ status: "draft" });
+  await assertFails(batchFor().commit());
+  assert.equal((await db.collection("operations").get()).size, 0);
+  assert.equal((await db.collection("inventoryDetails").get()).size, 0);
+});
+
+test("concurrent multi-product exits cannot overdraw or partially apply unrelated entries", async () => {
+  const ids = await extraProducts(2), a = await client(), b = await client();
+  const data = item => ({ reference: "CONCURRENT", lines: [{ itemId, type: "exit", quantity: 7 }, { itemId: item, type: "entry", quantity: 2 }] });
+  const results = await Promise.allSettled([a.store.recordOperation(data(ids[0]), operation(), a.identity), b.store.recordOperation(data(ids[1]), operation(), b.identity)]);
+  assert.equal(results.filter(result => result.status === "fulfilled").length, 1);
+  assert.equal(results.find(result => result.status === "rejected").reason.code, "inventory/insufficient-stock");
+  assert.equal((await db.doc(`inventory/${itemId}`).get()).data().stock, 3);
+  const stocks = await Promise.all(ids.map(async id => (await db.doc(`inventory/${id}`).get()).data().stock));
+  assert.deepEqual(stocks.sort(), [10, 12]);
+  assert.equal((await db.collection("operations").get()).size, 1);
+});

@@ -1,19 +1,21 @@
-import { filterInventory, inventoryMessage, movementInput, detailInput, detailValues } from "./inventory.js?v=0.6";
-import { prepareInventory } from "./firestore-inventory.js?v=0.6";
-import { isOpeningApproved } from "./opening-approval.js?v=0.6";
+import { filterInventory, inventoryMessage, detailInput, detailValues } from "./inventory.js?v=0.7";
+import { prepareInventory } from "./firestore-inventory.js?v=0.7";
+import { isOpeningApproved } from "./opening-approval.js?v=0.7";
+
+import { createMovementForm } from "./movement-form.js?v=0.7";
 
 const number = new Intl.NumberFormat("es-MX");
 const time = new Intl.DateTimeFormat("es-MX", { dateStyle: "short", timeStyle: "short", timeZone: "America/Merida" });
-const detailLabels = { umr: "UMR", location: "S. Loc. Ubicación", cs: "CS CARTONES", car: "CAR PAQUETES", cxt: "CXT" };
+const detailLabels = { umr: "UMR", location: "S. Loc. Ubicación" };
 
 export function mountInventory(identity) {
   const get = id => document.getElementById(id);
   const form = get("movement-form");
-  const select = get("movement-item");
   let closed = false;
   let stop;
   let store;
   let state = { items: [], movements: [], online: false, source: null };
+  const movementForm = createMovementForm(() => state);
   let saving = false;
   let pending;
   let completed;
@@ -34,18 +36,10 @@ export function mountInventory(identity) {
   function edit(item, field, value) {
     if (editSaving || editPending || !state.online || !isOpeningApproved(state.source)) return;
     editing = { itemId: item.id, field };
-    const numeric = ["cs", "car", "cxt"].includes(field);
     get("detail-title").textContent = `Editar ${detailLabels[field]}`;
     get("detail-label").textContent = detailLabels[field];
     get("detail-material").textContent = `${item.sku} · ${item.description}`;
-    get("detail-help").textContent = numeric
-      ? `Corrige el desglose visible. El saldo total de ${number.format(item.stock)} ${item.unit} no cambia. Para modificar existencias, registra una entrada o salida. La apertura original se conserva en el historial.`
-      : `Referencia visible del producto. El saldo conserva la unidad ${item.unit} y el almacén ${item.warehouse}; este cambio no convierte cantidades ni traslada existencias.`;
-    get("detail-value").type = numeric ? "number" : "text";
-    get("detail-value").inputMode = numeric ? "numeric" : "text";
-    for (const [name, value] of Object.entries({ min: "0", max: "1000000000", step: "1" })) {
-      if (numeric) get("detail-value").setAttribute(name, value); else get("detail-value").removeAttribute(name);
-    }
+    get("detail-help").textContent = `Referencia visible del producto. El saldo conserva la unidad ${item.unit} y el almacén ${item.warehouse}; este cambio no convierte cantidades ni traslada existencias.`;
     get("detail-value").maxLength = field === "umr" ? 20 : 80;
     get("detail-value").value = value;
     get("detail-notice").textContent = "";
@@ -63,22 +57,16 @@ export function mountInventory(identity) {
     button.disabled = !state.online || !isOpeningApproved(state.source) || editSaving || Boolean(editPending);
     button.addEventListener("click", () => edit(item, field, value)); td.append(button);
   }
-  function selection() {
-    const item = state.items.find(item => item.id === select.value);
-    get("movement-unit").textContent = item ? `Cantidad en ${item.unit}` : "Cantidad";
-    const p = item ? detailValues(item, state.details?.find(detail => detail.id === item.id)) : null;
-    get("opening-packages").textContent = p ? `Desglose visible: ${number.format(p.cs)} CS CARTONES, ${number.format(p.car)} CAR PAQUETES y ${number.format(p.cxt)} CXT. Puede corregirse en la tabla. No se recalcula con los movimientos ni modifica el saldo total.` : "";
-  }
   function controls() {
     const allowed = state.online && isOpeningApproved(state.source);
-    get("movement-fields").disabled = !allowed || saving || Boolean(pending);
+    movementForm.lock(!allowed || saving || Boolean(pending));
     get("movement-submit").disabled = !allowed || saving;
-    get("movement-submit").textContent = saving ? "Confirmando…" : pending ? "Reintentar confirmación" : "Confirmar movimiento";
+    get("movement-submit").textContent = saving ? "Confirmando…" : pending ? "Reintentar confirmación" : "Guardar movimiento";
     get("inventory-print").disabled = !state.online || !state.items.length;
     get("movement-help").textContent = !isOpeningApproved(state.source)
       ? "Los movimientos se habilitarán cuando se valide el saldo inicial."
       : !state.online ? "Espera la conexión con el servidor para registrar movimientos."
-      : "El saldo y su movimiento se guardan juntos. Las salidas no pueden dejar saldo negativo.";
+      : "Elige los productos y la operación de cada uno. Usa Cambiar desglose para corregir CS, CAR y CXT sin alterar el saldo total.";
     detailControls();
   }
   function draw() {
@@ -109,24 +97,46 @@ export function mountInventory(identity) {
       cell(row, `${number.format(item.stock)} ${item.unit}`).className = "numeric";
       const details = state.details?.find(detail => detail.id === item.id);
       const values = detailValues(item, details);
-      for (const key of ["cs", "car", "cxt", "umr", "location"]) editableCell(row, item, key, values[key]);
+      for (const key of ["cs", "car", "cxt"]) cell(row, number.format(values[key])).className = "numeric";
+      for (const key of ["umr", "location"]) editableCell(row, item, key, values[key]);
       const button = document.createElement("button");
       button.type = "button";
       button.className = "text-button";
-      button.textContent = "Ver material";
-      button.setAttribute("aria-label", `Ver material ${item.sku}`);
-      button.disabled = saving || Boolean(pending);
-      button.addEventListener("click", () => { select.value = item.id; selection(); get("movement-title").focus(); });
+      button.textContent = "Añadir al movimiento";
+      button.setAttribute("aria-label", `Añadir ${item.sku} al movimiento`);
+      button.disabled = !state.online || !isOpeningApproved(state.source) || saving || Boolean(pending);
+      button.addEventListener("click", () => movementForm.addProduct(item.id));
       cell(row, "").append(button);
       body.append(row);
     }
     get("inventory-empty").hidden = items.length > 0;
     get("inventory-empty").textContent = state.items.length ? "No hay materiales que coincidan con la búsqueda." : "No hay materiales confirmados por el servidor.";
-    const selected = select.value;
-    select.replaceChildren(new Option("Selecciona un material", ""));
-    for (const item of filterInventory(state.items)) select.add(new Option(`${item.sku} · ${item.description}`, item.id));
-    select.value = selected;
-    selection();
+    movementForm.refresh();
+    const operations = get("operation-list");
+    const expanded = new Set([...operations.querySelectorAll("details[open]")].map(card => card.dataset.id));
+    operations.replaceChildren();
+    for (const operation of state.operations || []) {
+      const card = document.createElement("details"); card.className = "operation-history";
+      card.dataset.id = operation.id; card.open = expanded.has(operation.id);
+      const summary = document.createElement("summary");
+      const date = operation.createdAt?.toDate?.();
+      const lines = Object.entries(operation.lines);
+      summary.textContent = `${date ? time.format(date) : "Pendiente"} · ${operation.reference} · ${lines.length} producto${lines.length === 1 ? "" : "s"}`;
+      card.append(summary);
+      const list = document.createElement("ul");
+      for (const [itemId, line] of lines) {
+        const item = state.items.find(item => item.id === itemId);
+        const entry = document.createElement("li");
+        const title = item ? `${item.description} · ${item.sku}` : itemId;
+        entry.textContent = line.type === "packages"
+          ? `${title} — Cambio de desglose: CS ${line.packagesBefore.cs} → ${line.packagesAfter.cs}, CAR ${line.packagesBefore.car} → ${line.packagesAfter.car}, CXT ${line.packagesBefore.cxt} → ${line.packagesAfter.cxt}. Saldo total sin cambio.`
+          : `${title} — ${line.type === "entry" ? "Entrada" : "Salida"}: ${number.format(line.quantity)} ${line.unit}. Saldo: ${number.format(line.stockBefore)} → ${number.format(line.stockAfter)} ${line.unit}.`;
+        list.append(entry);
+      }
+      card.append(list);
+      const audit = document.createElement("p"); audit.className = "small-copy";
+      audit.textContent = `Folio: ${operation.id} · Responsable: ${operation.actorUid}`; card.append(audit); operations.append(card);
+    }
     const history = get("movement-rows");
     history.replaceChildren();
     for (const m of state.movements) {
@@ -141,7 +151,8 @@ export function mountInventory(identity) {
       cell(row, m.actorUid);
       history.append(row);
     }
-    get("movements-empty").hidden = state.movements.length > 0;
+    get("legacy-history").hidden = !state.movements.length;
+    get("movements-empty").hidden = state.movements.length > 0 || Boolean(state.operations?.length);
     controls();
   }
   async function submit(event) {
@@ -149,20 +160,17 @@ export function mountInventory(identity) {
     if (saving || closed) return;
     let attempted;
     try {
-      if (!pending) pending = { data: movementInput({ itemId: select.value,
-        type: get("movement-type").value, quantity: get("movement-quantity").value,
-        reference: get("movement-reference").value }), id: crypto.randomUUID() };
+      if (!pending) pending = { data: movementForm.read(), id: crypto.randomUUID() };
       saving = true;
       controls();
       message("Confirmando el movimiento con el servidor…");
       const operation = pending;
       attempted = operation;
-      const result = await store.record(operation.data, operation.id, identity);
+      const result = await store.recordOperation(operation.data, operation.id, identity);
       if (closed) return;
       completed = result.id;
       pending = undefined;
-      form.reset();
-      selection();
+      movementForm.reset();
       message(`Movimiento confirmado. Folio: ${result.id}`);
     } catch (error) {
       if (closed) return;
@@ -170,10 +178,10 @@ export function mountInventory(identity) {
         message(`Movimiento confirmado. Folio: ${completed}`);
         return;
       }
-      const definitive = ["inventory/invalid-movement", "inventory/invalid-stock", "inventory/insufficient-stock",
+      const definitive = ["inventory/invalid-operation", "inventory/duplicate-product", "inventory/invalid-detail", "inventory/invalid-movement", "inventory/invalid-stock", "inventory/insufficient-stock",
         "inventory/not-approved", "inventory/not-found", "inventory/id-conflict", "permission-denied", "unauthenticated", "aborted"];
       if (definitive.includes(error.code)) pending = undefined;
-      message(`${inventoryMessage(error)}${pending ? ` Folio pendiente: ${pending.id}. Reintenta sin cambiar los datos. Antes de recargar o cerrar sesión, comprueba este folio en el historial.` : ""}`);
+      message(`${error.material ? `${error.material}: ` : ""}${inventoryMessage(error)}${pending ? ` Folio pendiente: ${pending.id}. Reintenta sin cambiar los datos. Antes de recargar o cerrar sesión, comprueba este folio en el historial.` : ""}`);
     } finally { saving = false; if (!closed) controls(); }
   }
   async function saveDetail(event) {
@@ -200,7 +208,6 @@ export function mountInventory(identity) {
   const connection = () => { store?.connectionChanged(); if (!navigator.onLine) { state.online = false; draw(); } };
   const print = () => { if (state.online) window.print(); };
   get("inventory-search").addEventListener("input", search);
-  select.addEventListener("change", selection);
   form.addEventListener("submit", submit);
   get("detail-form").addEventListener("submit", saveDetail);
   get("detail-cancel").addEventListener("click", cancelDetail);
@@ -215,11 +222,11 @@ export function mountInventory(identity) {
     stop = store.subscribe(next => {
       state = next;
       // A confirmed snapshot can settle an earlier response lost with the network.
-      if (pending && next.online && next.movements.some(m => m.id === pending.id && m.actorUid === identity.uid)) {
+      if (pending && next.online && next.operations?.some(m => m.id === pending.id && m.actorUid === identity.uid)) {
         completed = pending.id;
         pending = undefined;
         message(`Movimiento confirmado. Folio: ${completed}`);
-        form.reset();
+        movementForm.reset();
       }
       draw();
     }, error => { message(inventoryMessage(error)); });
@@ -235,7 +242,6 @@ export function mountInventory(identity) {
     dialog.close(); get("detail-form").reset(); get("detail-notice").textContent = "";
     editing = undefined; editPending = undefined;
     get("inventory-search").removeEventListener("input", search);
-    select.removeEventListener("change", selection);
     get("inventory-print").removeEventListener("click", print);
     window.removeEventListener("offline", connection);
     window.removeEventListener("online", connection);
@@ -243,10 +249,11 @@ export function mountInventory(identity) {
     pending = undefined;
     get("inventory-rows").replaceChildren();
     get("movement-rows").replaceChildren();
-    select.replaceChildren();
+    get("operation-list").replaceChildren();
+    movementForm.dispose();
     form.reset();
     get("inventory-search").value = "";
-    for (const id of ["material-count", "total-pac", "total-car", "source-status", "source-description", "opening-packages"]) get(id).textContent = "";
+    for (const id of ["material-count", "total-pac", "total-car", "source-status", "source-description"]) get(id).textContent = "";
     message("");
   };
 }

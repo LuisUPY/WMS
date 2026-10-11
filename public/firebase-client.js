@@ -1,5 +1,5 @@
-import { AccessError, validateConfiguration } from "./auth.js?v=0.6";
-import { firebaseConfig } from "./config.js?v=0.6";
+import { AccessError, validateConfiguration } from "./auth.js?v=0.7";
+import { firebaseConfig } from "./config.js?v=0.7";
 
 let prepared;
 let session;

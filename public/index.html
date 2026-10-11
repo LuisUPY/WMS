@@ -8,8 +8,8 @@
   <meta name="referrer" content="strict-origin-when-cross-origin">
   <title>Acceso de administrador · WMS</title>
   <link rel="icon" href="./assets/wms-logo.png" type="image/png">
-  <link rel="stylesheet" href="./styles.css?v=0.6">
-  <script defer src="./bootstrap.js?v=0.6"></script>
+  <link rel="stylesheet" href="./styles.css?v=0.7">
+  <script defer src="./bootstrap.js?v=0.7"></script>
 </head>
 <body>
   <a class="skip-link" href="#main">Ir al contenido</a>
@@ -69,8 +69,8 @@
           <div class="inventory-panel">
             <div class="inventory-toolbar"><label>Buscar material<input id="inventory-search" type="search" placeholder="SKU, descripción o código" autocomplete="off"></label><button class="secondary-button" id="inventory-print" type="button" disabled>Imprimir</button></div>
             <p id="inventory-count" class="small-copy"></p>
-            <p class="small-copy" id="packages-note">CS CARTONES, CAR PAQUETES y CXT parten de la apertura y pueden corregirse aquí. No se recalculan con movimientos; editarlos no cambia el saldo total.</p>
-            <div class="table-scroll" tabindex="0" role="region" aria-label="Materiales del inventario"><table class="inventory-table"><caption class="sr-only">Existencias por material y desglose visible editable</caption><thead><tr><th scope="col">Material</th><th scope="col">Descripción</th><th scope="col">Saldo total</th><th scope="col">CS CARTONES</th><th scope="col">CAR PAQUETES</th><th scope="col">CXT</th><th scope="col">UMR</th><th scope="col">S. Loc. Ubicación</th><th scope="col" class="actions-column">Detalle</th></tr></thead><tbody id="inventory-rows"></tbody></table></div>
+            <p class="small-copy" id="packages-note">Para corregir CS CARTONES, CAR PAQUETES o CXT, usa Cambiar desglose en Registrar movimiento. El saldo total no cambia con esa corrección.</p>
+            <div class="table-scroll" tabindex="0" role="region" aria-label="Materiales del inventario"><table class="inventory-table"><caption class="sr-only">Existencias por material y desglose visible</caption><thead><tr><th scope="col">Material</th><th scope="col">Descripción</th><th scope="col">Saldo total</th><th scope="col">CS CARTONES</th><th scope="col">CAR PAQUETES</th><th scope="col">CXT</th><th scope="col">UMR</th><th scope="col">S. Loc. Ubicación</th><th scope="col" class="actions-column">Movimiento</th></tr></thead><tbody id="inventory-rows"></tbody></table></div>
             <p id="inventory-empty" class="small-copy">No hay materiales confirmados por el servidor.</p>
           </div>
           <aside class="inventory-panel movement-panel">
@@ -78,17 +78,15 @@
             <p id="movement-help" class="small-copy"></p>
             <form id="movement-form">
               <fieldset id="movement-fields" disabled><legend class="sr-only">Datos del movimiento</legend>
-                <label>Material<select id="movement-item" required><option value="">Selecciona un material</option></select></label>
-                <label>Tipo<select id="movement-type"><option value="entry">Entrada</option><option value="exit">Salida</option></select></label>
-                <label><span id="movement-unit">Cantidad</span><input id="movement-quantity" type="number" min="1" max="1000000000" step="1" required inputmode="numeric"></label>
-                <label>Referencia documental<input id="movement-reference" maxlength="160" required autocomplete="off" placeholder="Documento o motivo"></label>
+                <label class="movement-reference">Documento o motivo<input id="movement-reference" maxlength="160" required autocomplete="off" placeholder="Ej. Entrega 125 o corrección de conteo"></label>
+                <div id="movement-lines"></div>
+                <button class="secondary-button" id="movement-add" type="button">+ Añadir producto</button>
               </fieldset>
-              <button class="primary-button" id="movement-submit" type="submit" disabled>Confirmar movimiento</button>
+              <div class="movement-footer"><p id="movement-summary" class="small-copy"></p><button class="primary-button" id="movement-submit" type="submit" disabled>Guardar movimiento</button></div>
             </form>
-            <p class="small-copy" id="opening-packages"></p>
           </aside>
         </div>
-        <section class="inventory-panel history-panel" aria-label="Historial de movimientos"><h2>Últimos 30 movimientos</h2><div class="table-scroll" tabindex="0" role="region" aria-label="Movimientos confirmados"><table><thead><tr><th scope="col">Fecha · Mérida</th><th scope="col">Material</th><th scope="col">Tipo</th><th scope="col">Cantidad</th><th scope="col">Referencia</th><th scope="col">Folio</th><th scope="col">Responsable (UID)</th></tr></thead><tbody id="movement-rows"></tbody></table></div><p id="movements-empty" class="small-copy">Aún no hay movimientos confirmados.</p></section>
+        <section class="inventory-panel history-panel" aria-label="Historial de movimientos"><h2>Últimos movimientos</h2><p class="small-copy">Un folio reúne todos los productos. Abre un movimiento para ver sus detalles.</p><div id="operation-list"></div><div id="legacy-history" hidden><h3>Movimientos anteriores</h3><div class="table-scroll" tabindex="0" role="region" aria-label="Movimientos confirmados"><table><thead><tr><th scope="col">Fecha · Mérida</th><th scope="col">Material</th><th scope="col">Tipo</th><th scope="col">Cantidad</th><th scope="col">Referencia</th><th scope="col">Folio</th><th scope="col">Responsable (UID)</th></tr></thead><tbody id="movement-rows"></tbody></table></div></div><p id="movements-empty" class="small-copy">Aún no hay movimientos confirmados.</p></section>
         <p class="temporary-session">La sesión termina al recargar, cerrar esta pestaña o después de 30 minutos.</p>
         <dialog id="detail-dialog" aria-labelledby="detail-title">
           <form id="detail-form">
@@ -104,7 +102,7 @@
       <noscript><p class="noscript-message">Activa JavaScript en tu navegador para iniciar sesión con Google.</p></noscript>
     </main>
 
-    <footer class="site-footer"><span>WMS <span class="footer-slash">/</span> Warehouse Management System</span><span id="system-version">Versión 0.6</span></footer>
+    <footer class="site-footer"><span>WMS <span class="footer-slash">/</span> Warehouse Management System</span><span id="system-version">Versión 0.7</span></footer>
   </div>
 </body>
 </html>
