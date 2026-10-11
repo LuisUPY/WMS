@@ -1,5 +1,5 @@
-import { prepareFirebaseSession } from "./firebase-client.js?v=0.5";
-import { createInventoryStore } from "./inventory-store.js?v=0.5";
+import { prepareFirebaseSession } from "./firebase-client.js?v=0.6";
+import { createInventoryStore } from "./inventory-store.js?v=0.6";
 
 let database;
 let firestoreSDK;

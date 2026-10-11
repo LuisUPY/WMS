@@ -74,8 +74,10 @@ El responsable debe validar corte real, saldos, unidades, normalizaciones y que 
 - `inventory/{almacén__SKU}`: identidad, unidad, saldo inicial, saldo actual, desglose de apertura, fila de origen, revisión, último movimiento y fecha de cambio.
 - `movements/{UUID}`: entrada/salida, material, unidad, cantidad, referencia, saldo antes/después, UID del responsable y fecha del servidor. Inmutable desde los clientes.
 - `inventoryApprovals/{huella}`: declaración de aprobación, marcador anterior y copia de los materiales revisados. Solo lectura desde clientes autorizados; creación exclusiva del entorno administrativo.
-- `inventoryDetails/{materialId}`: UMR y ubicación visibles, revisión, último cambio y fecha de servidor. Referencias independientes de la unidad y el almacén que controlan el saldo.
+- `inventoryDetails/{materialId}`: UMR, ubicación y cantidades CS/CAR/CXT visibles, revisión, último cambio y fecha de servidor. Las cantidades son enteros entre 0 y 1,000,000,000; parten de `openingPackages` mientras no exista una corrección. Referencias independientes de la unidad y el almacén que controlan el saldo.
 - `inventoryDetailChanges/{UUID}`: referencia cambiada, valor anterior/posterior, revisiones, responsable y fecha de servidor. Inmutable desde clientes; su creación exige guardar el cambio de referencia en la misma transacción.
+
+La edición de CS/CAR/CXT corrige el desglose visible, sin modificar el saldo total, el archivo Excel ni el desglose original de apertura. La tabla y el detalle usan las correcciones confirmadas. No se recalculan con movimientos. Los documentos de referencias de 0.5 conservan UMR, ubicación y revisión; los campos numéricos se incorporan usando sus valores de apertura en el primer cambio de 0.6.
 
 El permiso vigente es únicamente administrador. No se han habilitado roles de encargado o consulta. Se rechazan todos los recursos fuera de las rutas definidas.
 

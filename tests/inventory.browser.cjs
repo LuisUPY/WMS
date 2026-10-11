@@ -65,7 +65,7 @@ export async function prepareInventory() {
     assert.equal(await page.locator('.inventory-table th').count(),9);
     assert.equal(await page.locator('#inventory-rows tr').first().locator('td').first().textContent(),'87654321','alphabetic description precedes SKU');
     const material=page.locator('#inventory-rows tr').filter({hasText:'12345678'});
-    assert.deepEqual(await material.locator('td').allTextContents(),['12345678','Material de prueba PAC','120 PAC','1','2','0','PACCambiar','A101Cambiar','Ver material']);
+    assert.deepEqual(await material.locator('td').allTextContents(),['12345678','Material de prueba PAC','120 PAC','1Cambiar','2Cambiar','0Cambiar','PACCambiar','A101Cambiar','Ver material']);
     assert.equal(await page.getByRole('button',{name:'Cambiar UMR de 12345678'}).isDisabled(),true);
     await page.screenshot({path:'test-results/inventory-desktop.png',fullPage:true});
     await page.locator('#inventory-search').fill('70.10');
@@ -111,10 +111,29 @@ export async function prepareInventory() {
     assert.equal(await page.evaluate(()=>window.__detailRecords[1].id===window.__detailRecords[2].id),true,'detail retry keeps ID');
     assert.match(await material.locator('td').nth(6).textContent(),/PAQUETE/);
     assert.equal(await material.locator('td').nth(2).textContent(),'120 PAC','editable reference never changes the balance unit');
+    for (const [label,column,value] of [['CS CARTONES',3,'4'],['CAR PAQUETES',4,'0'],['CXT',5,'3']]) {
+      await page.getByRole('button',{name:`Cambiar ${label} de 12345678`,exact:true}).click();
+      assert.equal(await page.locator('#detail-value').getAttribute('type'),'number');
+      assert.match(await page.locator('#detail-help').textContent(),/saldo total.*no cambia/);
+      await page.locator('#detail-value').fill('-1');
+      assert.equal(await page.locator('#detail-value').evaluate(e=>e.checkValidity()),false);
+      await page.locator('#detail-value').fill('1.5');
+      assert.equal(await page.locator('#detail-value').evaluate(e=>e.checkValidity()),false);
+      await page.locator('#detail-value').fill(value);
+      await page.locator('#detail-submit').click();
+      await page.waitForFunction(()=>!document.querySelector('#detail-dialog').open);
+      assert.equal(await material.locator('td').nth(column).textContent(),`${value}Cambiar`);
+      assert.equal(await page.locator('#total-pac').textContent(),'120');
+      assert.equal(await page.locator('#movement-rows tr').count(),0);
+    }
+    await page.getByRole('button',{name:'Cambiar UMR de 12345678',exact:true}).click();
+    assert.equal(await page.locator('#detail-value').getAttribute('type'),'text','dialog restores text mode');
+    await page.locator('#detail-cancel').click();
     await page.screenshot({path:'test-results/inventory-approved-desktop.png',fullPage:true});
     await page.getByRole('button',{name:'Ver material 12345678'}).click();
     assert.equal(await page.locator('#movement-item').inputValue(),'A101__12345678');
     assert.match(await page.locator('#opening-packages').textContent(),/No se recalcula/);
+    assert.match(await page.locator('#opening-packages').textContent(),/4 CS CARTONES, 0 CAR PAQUETES y 3 CXT/);
     await page.locator('#movement-quantity').fill('5');
     await page.locator('#movement-reference').fill('TEST-ENTRADA');
     await page.evaluate(()=>{window.__holdRecord=true;});
@@ -143,6 +162,7 @@ export async function prepareInventory() {
     assert.equal(await page.locator('#movement-submit').isDisabled(),true);
     assert.equal(await page.locator('#inventory-print').isDisabled(),true);
     assert.equal(await page.getByRole('button',{name:'Cambiar UMR de 12345678'}).isDisabled(),true);
+    assert.equal(await page.getByRole('button',{name:'Cambiar CS CARTONES de 12345678'}).isDisabled(),true);
     await context.setOffline(false);
     await page.evaluate(()=>window.__pushInventory({online:true}));
     for(const width of [390,320]) {

@@ -1,9 +1,10 @@
-import { filterInventory, inventoryMessage, movementInput, detailInput } from "./inventory.js?v=0.5";
-import { prepareInventory } from "./firestore-inventory.js?v=0.5";
-import { isOpeningApproved } from "./opening-approval.js?v=0.5";
+import { filterInventory, inventoryMessage, movementInput, detailInput, detailValues } from "./inventory.js?v=0.6";
+import { prepareInventory } from "./firestore-inventory.js?v=0.6";
+import { isOpeningApproved } from "./opening-approval.js?v=0.6";
 
 const number = new Intl.NumberFormat("es-MX");
 const time = new Intl.DateTimeFormat("es-MX", { dateStyle: "short", timeStyle: "short", timeZone: "America/Merida" });
+const detailLabels = { umr: "UMR", location: "S. Loc. Ubicación", cs: "CS CARTONES", car: "CAR PAQUETES", cxt: "CXT" };
 
 export function mountInventory(identity) {
   const get = id => document.getElementById(id);
@@ -33,10 +34,18 @@ export function mountInventory(identity) {
   function edit(item, field, value) {
     if (editSaving || editPending || !state.online || !isOpeningApproved(state.source)) return;
     editing = { itemId: item.id, field };
-    get("detail-title").textContent = field === "umr" ? "Editar UMR" : "Editar S. Loc. Ubicación";
-    get("detail-label").textContent = field === "umr" ? "UMR" : "S. Loc. Ubicación";
+    const numeric = ["cs", "car", "cxt"].includes(field);
+    get("detail-title").textContent = `Editar ${detailLabels[field]}`;
+    get("detail-label").textContent = detailLabels[field];
     get("detail-material").textContent = `${item.sku} · ${item.description}`;
-    get("detail-help").textContent = `Referencia visible del producto. El saldo conserva la unidad ${item.unit} y el almacén ${item.warehouse}; este cambio no convierte cantidades ni traslada existencias.`;
+    get("detail-help").textContent = numeric
+      ? `Corrige el desglose visible. El saldo total de ${number.format(item.stock)} ${item.unit} no cambia. Para modificar existencias, registra una entrada o salida. La apertura original se conserva en el historial.`
+      : `Referencia visible del producto. El saldo conserva la unidad ${item.unit} y el almacén ${item.warehouse}; este cambio no convierte cantidades ni traslada existencias.`;
+    get("detail-value").type = numeric ? "number" : "text";
+    get("detail-value").inputMode = numeric ? "numeric" : "text";
+    for (const [name, value] of Object.entries({ min: "0", max: "1000000000", step: "1" })) {
+      if (numeric) get("detail-value").setAttribute(name, value); else get("detail-value").removeAttribute(name);
+    }
     get("detail-value").maxLength = field === "umr" ? 20 : 80;
     get("detail-value").value = value;
     get("detail-notice").textContent = "";
@@ -46,18 +55,19 @@ export function mountInventory(identity) {
   }
   function editableCell(row, item, field, value) {
     const td = cell(row, "");
-    const displayed = document.createElement("span"); displayed.textContent = value; td.append(displayed);
+    const displayed = document.createElement("span"); displayed.textContent = typeof value === "number" ? number.format(value) : value; td.append(displayed);
+    if (typeof value === "number") td.className = "numeric";
     const button = document.createElement("button");
     button.type = "button"; button.className = "text-button cell-edit"; button.textContent = "Cambiar";
-    button.setAttribute("aria-label", `Cambiar ${field === "umr" ? "UMR" : "ubicación"} de ${item.sku}`);
+    button.setAttribute("aria-label", `Cambiar ${field === "location" ? "ubicación" : detailLabels[field]} de ${item.sku}`);
     button.disabled = !state.online || !isOpeningApproved(state.source) || editSaving || Boolean(editPending);
     button.addEventListener("click", () => edit(item, field, value)); td.append(button);
   }
   function selection() {
     const item = state.items.find(item => item.id === select.value);
     get("movement-unit").textContent = item ? `Cantidad en ${item.unit}` : "Cantidad";
-    const p = item?.openingPackages;
-    get("opening-packages").textContent = p ? `Desglose guardado de apertura: ${number.format(p.cs)} CS CARTONES, ${number.format(p.car)} CAR PAQUETES y ${number.format(p.cxt)} CXT. No se recalcula con los movimientos; faltan factores validados.` : "";
+    const p = item ? detailValues(item, state.details?.find(detail => detail.id === item.id)) : null;
+    get("opening-packages").textContent = p ? `Desglose visible: ${number.format(p.cs)} CS CARTONES, ${number.format(p.car)} CAR PAQUETES y ${number.format(p.cxt)} CXT. Puede corregirse en la tabla. No se recalcula con los movimientos ni modifica el saldo total.` : "";
   }
   function controls() {
     const allowed = state.online && isOpeningApproved(state.source);
@@ -97,12 +107,9 @@ export function mountInventory(identity) {
       cell(row, item.sku);
       cell(row, item.description);
       cell(row, `${number.format(item.stock)} ${item.unit}`).className = "numeric";
-      for (const key of ["cs", "car", "cxt"]) {
-        cell(row, Number.isSafeInteger(item.openingPackages?.[key]) ? number.format(item.openingPackages[key]) : "—").className = "numeric";
-      }
       const details = state.details?.find(detail => detail.id === item.id);
-      editableCell(row, item, "umr", details?.umr ?? item.unit);
-      editableCell(row, item, "location", details?.location ?? item.warehouse);
+      const values = detailValues(item, details);
+      for (const key of ["cs", "car", "cxt", "umr", "location"]) editableCell(row, item, key, values[key]);
       const button = document.createElement("button");
       button.type = "button";
       button.className = "text-button";

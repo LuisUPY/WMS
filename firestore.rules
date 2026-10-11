@@ -55,9 +55,11 @@ service cloud.firestore {
       return c.keys().hasOnly(['itemId', 'field', 'valueBefore', 'valueAfter', 'revisionBefore', 'revisionAfter', 'actorUid', 'createdAt'])
         && c.keys().hasAll(['itemId', 'field', 'valueBefore', 'valueAfter', 'revisionBefore', 'revisionAfter', 'actorUid', 'createdAt'])
         && c.itemId is string && c.itemId.matches('^[A-Z0-9]+__[0-9]{1,20}$')
-        && c.field in ['umr', 'location'] && c.valueBefore is string && c.valueAfter is string
-        && c.valueAfter.size() > 0 && c.valueAfter.size() <= (c.field == 'umr' ? 20 : 80)
-        && c.valueAfter.matches('.*[^\\s].*')
+        && ((c.field in ['umr', 'location'] && c.valueBefore is string && c.valueAfter is string
+          && c.valueAfter.size() > 0 && c.valueAfter.size() <= (c.field == 'umr' ? 20 : 80)
+          && c.valueAfter.matches('.*[^\\s].*'))
+          || (c.field in ['cs', 'car', 'cxt'] && c.valueBefore is int && c.valueAfter is int
+            && c.valueAfter >= 0 && c.valueAfter <= 1000000000))
         && c.revisionBefore is int && c.revisionBefore >= 0 && c.revisionBefore < 9007199254740991
         && c.revisionAfter is int && c.revisionAfter == c.revisionBefore + 1
         && c.actorUid == request.auth.uid && c.createdAt == request.time;
@@ -66,12 +68,18 @@ service cloud.firestore {
       let path = /databases/$(database)/documents/inventoryDetails/$(itemId);
       let item = get(/databases/$(database)/documents/inventory/$(itemId)).data;
       let before = exists(path) ? get(path).data : {'umr': item.unit, 'location': item.warehouse, 'revision': 0};
-      return next.keys().hasOnly(['itemId', 'umr', 'location', 'revision', 'lastChangeId', 'updatedAt'])
-        && next.keys().hasAll(['itemId', 'umr', 'location', 'revision', 'lastChangeId', 'updatedAt'])
+      let values = {'umr': before.umr, 'location': before.location,
+        'cs': before.get('cs', item.openingPackages.cs), 'car': before.get('car', item.openingPackages.car),
+        'cxt': before.get('cxt', item.openingPackages.cxt)};
+      return next.keys().hasOnly(['itemId', 'umr', 'location', 'cs', 'car', 'cxt', 'revision', 'lastChangeId', 'updatedAt'])
+        && next.keys().hasAll(['itemId', 'umr', 'location', 'cs', 'car', 'cxt', 'revision', 'lastChangeId', 'updatedAt'])
         && next.itemId == itemId && c.itemId == itemId
-        && c.valueBefore == before[c.field] && c.revisionBefore == before.revision
-        && next.umr == (c.field == 'umr' ? c.valueAfter : before.umr)
-        && next.location == (c.field == 'location' ? c.valueAfter : before.location)
+        && c.valueBefore == values[c.field] && c.revisionBefore == before.revision
+        && next.umr == (c.field == 'umr' ? c.valueAfter : values.umr)
+        && next.location == (c.field == 'location' ? c.valueAfter : values.location)
+        && next.cs == (c.field == 'cs' ? c.valueAfter : values.cs)
+        && next.car == (c.field == 'car' ? c.valueAfter : values.car)
+        && next.cxt == (c.field == 'cxt' ? c.valueAfter : values.cxt)
         && next.revision == c.revisionAfter && next.lastChangeId == changeId && next.updatedAt == request.time;
     }
     match /inventoryDetails/{itemId} {

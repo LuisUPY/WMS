@@ -292,9 +292,56 @@ test("reference rules reject unpaired changes, extra fields and forged authors",
     const id = operation(), batch = sdk.writeBatch(c.firestore);
     batch.set(sdk.doc(c.firestore, "inventoryDetailChanges", id), { itemId, field: "umr", valueBefore: "PAC", valueAfter: "PAQUETE",
       revisionBefore: 0, revisionAfter: 1, actorUid: c.identity.uid, createdAt: sdk.serverTimestamp(), ...overrides });
-    batch.set(sdk.doc(c.firestore, "inventoryDetails", itemId), { itemId, umr: "PAQUETE", location: "A101", revision: 1, lastChangeId: id, updatedAt: sdk.serverTimestamp() });
+    batch.set(sdk.doc(c.firestore, "inventoryDetails", itemId), { itemId, umr: "PAQUETE", location: "A101", cs: 0, car: 1, cxt: 0,
+      revision: 1, lastChangeId: id, updatedAt: sdk.serverTimestamp() });
     await assertFails(batch.commit());
   }
   await db.doc("settings/inventory").update({ status: "draft" });
   await assertFails(sdk.setDoc(sdk.doc(c.firestore, "inventoryDetails", itemId), { itemId, umr: "PAC" }));
+});
+
+test("package corrections preserve legacy references and opening stock, with idempotence and shared updates", async () => {
+  await db.doc(`inventoryDetails/${itemId}`).set({ itemId, umr: "PAQUETE", location: "A102", revision: 2,
+    lastChangeId: "legacy-reference-change", updatedAt: new Date() });
+  const a = await client(), b = await client();
+  const id = operation(), data = { itemId, field: "cs", value: "3" };
+  assert.equal((await a.store.editDetail(data, id, a.identity)).duplicate, false);
+  assert.equal((await a.store.editDetail(data, id, a.identity)).duplicate, true);
+  const change = (await db.doc(`inventoryDetailChanges/${id}`).get()).data();
+  assert.equal(change.valueBefore, 0); assert.equal(change.valueAfter, 3); assert.equal(change.actorUid, a.identity.uid);
+  await b.store.editDetail({ itemId, field: "car", value: 0 }, operation(), b.identity);
+  await a.store.editDetail({ itemId, field: "cxt", value: 7 }, operation(), a.identity);
+  await new Promise((resolve, reject) => {
+    const timer = setTimeout(() => { stop(); reject(new Error("Package listener timed out")); }, 10000);
+    const stop = sdk.onSnapshot(sdk.doc(b.firestore, "inventoryDetails", itemId), { includeMetadataChanges: true }, snapshot => {
+      if (!snapshot.metadata.fromCache && !snapshot.metadata.hasPendingWrites && snapshot.data()?.cxt === 7) { clearTimeout(timer); stop(); resolve(); }
+    }, reject);
+  });
+  await b.store.editDetail({ itemId, field: "umr", value: "PAC" }, operation(), b.identity);
+  const details = (await db.doc(`inventoryDetails/${itemId}`).get()).data();
+  assert.deepEqual([details.cs, details.car, details.cxt, details.umr, details.location, details.revision], [3, 0, 7, "PAC", "A102", 6]);
+  const item = (await db.doc(`inventory/${itemId}`).get()).data();
+  assert.deepEqual(item.openingPackages, sample.openingPackages);
+  assert.equal(item.stock, 10); assert.equal(item.revision, 0); assert.equal(item.unit, "PAC"); assert.equal(item.warehouse, "A101");
+  assert.equal((await db.collection("movements").get()).size, 0);
+  assert.equal((await db.collection("inventoryDetailChanges").get()).size, 4);
+});
+
+test("package rules reject invalid numbers and changes to other columns or the original balance", async () => {
+  const c = await client();
+  function batchFor(value, extra = {}) {
+    const id = operation(), batch = sdk.writeBatch(c.firestore);
+    batch.set(sdk.doc(c.firestore, "inventoryDetailChanges", id), { itemId, field: "cs", valueBefore: 0, valueAfter: value,
+      revisionBefore: 0, revisionAfter: 1, actorUid: c.identity.uid, createdAt: sdk.serverTimestamp() });
+    batch.set(sdk.doc(c.firestore, "inventoryDetails", itemId), { itemId, umr: "PAC", location: "A101", cs: value, car: 1, cxt: 0,
+      revision: 1, lastChangeId: id, updatedAt: sdk.serverTimestamp(), ...extra });
+    return batch;
+  }
+  for (const value of [-1, 1.5, "0", "", null, 1000000001]) await assertFails(batchFor(value).commit());
+  await assertFails(batchFor(2, { car: 8 }).commit());
+  await assertFails(batchFor(2, { umr: "OTRA" }).commit());
+  const batch = batchFor(2);
+  batch.update(sdk.doc(c.firestore, "inventory", itemId), { openingPackages: { cs: 2, car: 1, cxt: 0 }, stock: 20 });
+  await assertFails(batch.commit());
+  await assertSucceeds(batchFor(0).commit());
 });

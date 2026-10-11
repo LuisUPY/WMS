@@ -1,5 +1,5 @@
-import { InventoryError, movementInput, nextStock, detailInput } from "./inventory.js?v=0.5";
-import { isOpeningApproved } from "./opening-approval.js?v=0.5";
+import { InventoryError, movementInput, nextStock, detailInput, detailValues } from "./inventory.js?v=0.6";
+import { isOpeningApproved } from "./opening-approval.js?v=0.6";
 
 // The same implementation runs in browsers and in the Firestore emulator tests.
 export function createInventoryStore(db, sdk, isOnline = () => navigator.onLine) {
@@ -57,11 +57,12 @@ export function createInventoryStore(db, sdk, isOnline = () => navigator.onLine)
         if (!settings.exists() || !isOpeningApproved(settings.data())) throw new InventoryError("inventory/not-approved");
         if (!itemSnapshot.exists()) throw new InventoryError("inventory/not-found");
         const item = itemSnapshot.data();
-        const before = detailSnapshot.exists() ? detailSnapshot.data() : { umr: item.unit, location: item.warehouse, revision: 0 };
+        const savedDetails = detailSnapshot.exists() ? detailSnapshot.data() : null;
+        const before = { ...detailValues(item, savedDetails), revision: savedDetails?.revision ?? 0 };
         const createdAt = sdk.serverTimestamp();
         transaction.set(changeRef, { itemId: data.itemId, field: data.field, valueBefore: before[data.field], valueAfter: data.value,
           revisionBefore: before.revision, revisionAfter: before.revision + 1, actorUid: identity.uid, createdAt });
-        transaction.set(detailRef, { itemId: data.itemId, umr: before.umr, location: before.location,
+        transaction.set(detailRef, { itemId: data.itemId, ...detailValues(item, before),
           [data.field]: data.value, revision: before.revision + 1, lastChangeId: operationId, updatedAt: createdAt });
         return { id: operationId, duplicate: false };
       });

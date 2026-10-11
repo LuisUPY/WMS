@@ -1,6 +1,6 @@
-import { createAccessController } from "./auth.js?v=0.5";
-import { prepareGoogleAccess } from "./firebase-client.js?v=0.5";
-import { mountInventory } from "./inventory-view.js?v=0.5";
+import { createAccessController } from "./auth.js?v=0.6";
+import { prepareGoogleAccess } from "./firebase-client.js?v=0.6";
+import { mountInventory } from "./inventory-view.js?v=0.6";
 
 const login = document.querySelector("#login-view");
 const account = document.querySelector("#account-view");

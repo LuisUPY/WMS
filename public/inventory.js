@@ -21,11 +21,20 @@ export function nextStock(item, input) {
 }
 
 export function detailInput(input) {
-  const value = typeof input.value === "string" ? input.value.trim() : "";
+  const numeric = ["cs", "car", "cxt"].includes(input.field);
+  const raw = typeof input.value === "string" ? input.value.trim() : input.value;
+  const value = numeric ? Number(raw) : raw;
   const maximum = input.field === "umr" ? 20 : 80;
-  if (!/^[A-Z0-9]+__[0-9]{1,20}$/.test(input.itemId || "") || !["umr", "location"].includes(input.field) ||
-      !value || value.length > maximum) throw new InventoryError("inventory/invalid-detail");
+  if (!/^[A-Z0-9]+__[0-9]{1,20}$/.test(input.itemId || "") || !["umr", "location", "cs", "car", "cxt"].includes(input.field) ||
+      (numeric ? !/^[0-9]+$/.test(String(raw)) || !Number.isSafeInteger(value) || value < 0 || value > 1000000000
+        : typeof value !== "string" || !value || value.length > maximum)) throw new InventoryError("inventory/invalid-detail");
   return { itemId: input.itemId, field: input.field, value };
+}
+
+export function detailValues(item, details) {
+  return { umr: details?.umr ?? item.unit, location: details?.location ?? item.warehouse,
+    cs: details?.cs ?? item.openingPackages.cs, car: details?.car ?? item.openingPackages.car,
+    cxt: details?.cxt ?? item.openingPackages.cxt };
 }
 
 export function filterInventory(items, search = "") {
@@ -44,7 +53,7 @@ export function inventoryMessage(error) {
     "inventory/insufficient-stock": "No hay saldo suficiente. Revisa la existencia actual.",
     "inventory/not-found": "El material ya no está disponible. Actualiza tu consulta.",
     "inventory/id-conflict": "Este identificador ya corresponde a otro movimiento. Revisa el historial.",
-    "inventory/invalid-detail": "Indica una UMR de hasta 20 caracteres o una ubicación de hasta 80 caracteres.",
+    "inventory/invalid-detail": "Indica un entero entre 0 y 1,000,000,000 para CS, CAR o CXT; UMR admite hasta 20 caracteres y ubicación hasta 80.",
     "permission-denied": "Tu cuenta no tiene permiso para consultar o modificar el inventario.",
     "unauthenticated": "La sesión terminó. Vuelve a iniciar sesión.",
     "unavailable": "No pudimos confirmar el movimiento. Conserva el formulario y vuelve a intentarlo con la misma referencia.",

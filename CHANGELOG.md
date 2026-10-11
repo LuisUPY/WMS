@@ -1,5 +1,12 @@
 # Historial de versiones
 
+## 0.6 — 2026-10-11
+
+- CS CARTONES, CAR PAQUETES y CXT editables mediante diálogos numéricos: enteros desde cero, con guardado confirmado y auditoría inmutable.
+- Correcciones compartidas en tiempo real, conservando las referencias UMR/Ubicación existentes y el desglose original de apertura. Reintentos con el mismo folio.
+- La tabla y el detalle del material muestran el desglose corregido; los diálogos aclaran que estas correcciones no cambian el saldo total ni se recalculan con entradas/salidas.
+- Reglas y pruebas ampliadas para impedir valores negativos, fracciones, cambios sin auditoría o alteración simultánea de otras columnas.
+
 ## 0.5 — 2026-10-11
 
 - Tabla ordenada alfabéticamente por descripción, con desempate por SKU.
@@ -46,4 +53,4 @@
 - Simplificación del login: eliminación del icono de candado, la etiqueta «Administrador» y los tres textos introductorios señalados.
 - Indicador «Versión 0.1» en el pie de página.
 
-Cada actualización posterior incrementará la versión en 0.1 y se registrará aquí. La siguiente versión será 0.6.
+Cada actualización posterior incrementará la versión en 0.1 y se registrará aquí. La siguiente versión será 0.7.

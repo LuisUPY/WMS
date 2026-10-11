@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { access } from "node:fs/promises";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { filterInventory, movementInput, nextStock } from "../public/inventory.js";
+import { filterInventory, movementInput, nextStock, detailInput } from "../public/inventory.js";
 import { readInventoryWorkbook, importOpening } from "../scripts/inventory-import.mjs";
 
 const item = { id: "A101__12345678", sku: "12345678", description: "Material de prueba", stock: 10 };
@@ -24,6 +24,18 @@ test("stock cannot be negative or exceed integer precision", () => {
   assert.throws(() => nextStock(item, { type: "exit", quantity: 11 }), { code: "inventory/insufficient-stock" });
   assert.throws(() => nextStock({ stock: Number.MAX_SAFE_INTEGER }, { type: "entry", quantity: 1 }), { code: "inventory/invalid-stock" });
   assert.throws(() => nextStock({ stock: null }, { type: "entry", quantity: 1 }), { code: "inventory/invalid-stock" });
+});
+
+test("package corrections accept zero and integers, rejecting empty, fractional and invalid values", () => {
+  for (const field of ["cs", "car", "cxt"]) {
+    for (const value of [0, "0", " 12 ", 1000000000]) {
+      assert.deepEqual(detailInput({ itemId: item.id, field, value }), { itemId: item.id, field, value: Number(value) });
+    }
+    for (const value of ["", " ", null, undefined, false, -1, 1.5, "1e3", "1,000", 1000000001, Infinity]) {
+      assert.throws(() => detailInput({ itemId: item.id, field, value }), { code: "inventory/invalid-detail" });
+    }
+  }
+  assert.equal(detailInput({ itemId: item.id, field: "umr", value: " PAC " }).value, "PAC");
 });
 
 test("search matches SKU, description and alternate code", () => {
